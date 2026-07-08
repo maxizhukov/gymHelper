@@ -1,0 +1,33 @@
+# Shared PostgreSQL for all apps on the droplet.
+# Lives at /opt/postgres/docker-compose.yml on the server.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=64MB"
+      - "-c"
+      - "max_connections=50"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432" # host-local only; apps use the 'shared' network
+    networks:
+      - shared
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  shared:
+    external: true
+
+volumes:
+  pgdata:
