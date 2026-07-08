@@ -30,7 +30,7 @@ function App() {
 
   return (
     <main className="app">
-      <h1>🏋️ GymHelper</h1>
+      <h1>🏋️ GymHelper TELEGRAM BOT</h1>
       <p className="subtitle">Frontend ↔ Backend connectivity check</p>
 
       <div className={`card status-${status}`}>
