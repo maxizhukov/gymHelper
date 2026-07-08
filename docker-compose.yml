@@ -1,0 +1,39 @@
+# Production stack for gym.maksymzhukov.com.
+# Deployed by .github/workflows/deploy.yml via `docker compose up -d --build`.
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      # Same-origin in production (Caddy serves the UI and proxies /api),
+      # so CORS is effectively a safety net.
+      CORS_ORIGIN: https://gym.maksymzhukov.com
+    expose:
+      - "3000" # internal only; not published to the host
+    networks:
+      - gymhelper
+
+  caddy:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      SITE_ADDRESS: gym.maksymzhukov.com
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data # persists issued TLS certificates across deploys
+      - caddy_config:/config
+    networks:
+      - gymhelper
+
+networks:
+  gymhelper:
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -54,6 +54,12 @@ npm run dev:frontend
 npm run build
 ```
 
+## Deployment
+
+Production is a Docker Compose stack on a droplet, served at
+**https://gym.maksymzhukov.com**, with auto-deploy on every push to `main`.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the architecture and first-time setup.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and fill in values as needed. `.env` is git-ignored —

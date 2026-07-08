@@ -1,0 +1,18 @@
+# SITE_ADDRESS is injected from the environment (see docker-compose.yml) and
+# defaults to the production domain. Caddy obtains and renews TLS automatically.
+{$SITE_ADDRESS:gym.maksymzhukov.com} {
+	encode zstd gzip
+
+	# API requests go to the NestJS backend (reachable by service name on the
+	# compose network). The backend serves everything under /api itself.
+	handle /api/* {
+		reverse_proxy backend:3000
+	}
+
+	# Everything else is the static React SPA, with client-side routing fallback.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
