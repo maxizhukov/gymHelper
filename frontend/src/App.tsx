@@ -1,53 +1,97 @@
-import { useEffect, useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import './App.css'
 
-type Status = 'loading' | 'ok' | 'error'
+type LoginState = 'idle' | 'submitting' | 'success' | 'error'
+
+interface AuthenticatedUser {
+  id: number
+  username: string
+}
 
 function App() {
-  const [message, setMessage] = useState('')
-  const [status, setStatus] = useState<Status>('loading')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [state, setState] = useState<LoginState>('idle')
+  const [error, setError] = useState('')
+  const [user, setUser] = useState<AuthenticatedUser | null>(null)
 
-  useEffect(() => {
-    const controller = new AbortController()
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    setState('submitting')
+    setError('')
 
-    fetch('/api/message', { signal: controller.signal })
-      .then((res) => {
-        if (!res.ok) throw new Error(`Request failed: ${res.status}`)
-        return res.json() as Promise<{ message: string }>
-      })
-      .then((data) => {
-        setMessage(data.message)
-        setStatus('ok')
-      })
-      .catch((err) => {
-        if (err.name === 'AbortError') return
-        console.error(err)
-        setStatus('error')
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
       })
 
-    return () => controller.abort()
-  }, [])
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          message?: string
+        } | null
+        throw new Error(data?.message ?? 'Login failed. Please try again.')
+      }
+
+      const data = (await res.json()) as { user: AuthenticatedUser }
+      setUser(data.user)
+      setState('success')
+      setPassword('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed.')
+      setState('error')
+    }
+  }
+
+  if (state === 'success' && user) {
+    return (
+      <main className="app">
+        <h1>🏋️ GymHelper</h1>
+        <div className="card status-ok">
+          <p className="label">Signed in as</p>
+          <p className="message">{user.username}</p>
+        </div>
+      </main>
+    )
+  }
 
   return (
     <main className="app">
-      <h1>🏋️ GymHelper TELEGRAM BOT</h1>
-      <p className="subtitle">Frontend ↔ Backend connectivity check</p>
+      <h1>🏋️ GymHelper</h1>
+      <p className="subtitle">Sign in to your account</p>
 
-      <div className={`card status-${status}`}>
-        {status === 'loading' && <p>Contacting the backend…</p>}
-        {status === 'ok' && (
-          <>
-            <p className="label">Message from NestJS:</p>
-            <p className="message">{message}</p>
-          </>
-        )}
-        {status === 'error' && (
-          <p>
-            Could not reach the backend. Is it running on{' '}
-            <code>http://localhost:3000</code>?
-          </p>
-        )}
-      </div>
+      <form className="card login-form" onSubmit={handleSubmit}>
+        <label className="field">
+          <span>Username</span>
+          <input
+            type="text"
+            name="username"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+          />
+        </label>
+
+        <label className="field">
+          <span>Password</span>
+          <input
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </label>
+
+        {state === 'error' && <p className="error">{error}</p>}
+
+        <button type="submit" disabled={state === 'submitting'}>
+          {state === 'submitting' ? 'Signing in…' : 'Sign in'}
+        </button>
+      </form>
     </main>
   )
 }

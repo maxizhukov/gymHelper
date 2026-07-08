@@ -47,7 +47,16 @@ credential. If unsure whether something is sensitive, ask before committing.
 - Handle errors explicitly; don't swallow exceptions silently.
 - No hardcoded config that varies by environment — use env vars / config files.
 
-## 4. Web + backend specifics
+## 4. Design — mobile first
+
+- Design and build **mobile first**: base styles target small screens; layer on
+  larger layouts with `min-width` media queries, not the other way around.
+- Use responsive units and fluid layouts; avoid fixed widths that break on phones.
+- Keep tap targets comfortably sized and keep form inputs at ≥16px font so mobile
+  browsers don't auto-zoom on focus.
+- Verify the UI works at a narrow viewport before widening it.
+
+## 5. Web + backend specifics
 
 - **Input validation** on every API endpoint and form.
 - **AuthN/AuthZ**: never trust the client; enforce permissions server-side.
@@ -55,7 +64,7 @@ credential. If unsure whether something is sensitive, ask before committing.
 - Set security headers, CORS, and rate limiting deliberately, not by copy-paste.
 - Don't log secrets, tokens, or full PII.
 
-## 5. Working style
+## 6. Working style
 
 - When the stack/framework choices are still open, ask before locking one in.
 - Keep dependencies minimal and justified; each new dependency is a maintenance and

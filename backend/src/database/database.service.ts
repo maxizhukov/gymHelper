@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Pool } from 'pg';
+import { Pool, QueryResult, QueryResultRow } from 'pg';
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
@@ -21,6 +21,17 @@ export class DatabaseService implements OnModuleDestroy {
   async ping(): Promise<boolean> {
     const result = await this.pool.query<{ ok: number }>('SELECT 1 AS ok');
     return result.rows[0]?.ok === 1;
+  }
+
+  /**
+   * Runs a parameterized query. Always pass user-supplied values via `params`
+   * ($1, $2, …) — never string-concatenate them into `text`.
+   */
+  async query<T extends QueryResultRow = QueryResultRow>(
+    text: string,
+    params?: unknown[],
+  ): Promise<QueryResult<T>> {
+    return this.pool.query<T>(text, params);
   }
 
   async onModuleDestroy(): Promise<void> {
