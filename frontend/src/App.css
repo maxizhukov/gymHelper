@@ -126,6 +126,34 @@
   font-size: 0.9rem;
 }
 
+.training-days {
+  margin-top: 2rem;
+  text-align: left;
+}
+
+.training-days h2 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.75rem;
+}
+
+.training-day-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Compact against the default .card padding — these are a scannable list, not a panel. */
+.training-day-card {
+  padding: 1rem 1.25rem;
+}
+
 .home-nav {
   margin-top: 1.5rem;
 }
@@ -191,5 +219,10 @@ code {
 
   .card {
     padding: 1.75rem;
+  }
+
+  /* Must follow .card above: same specificity, so source order decides. */
+  .training-day-card {
+    padding: 1.25rem 1.5rem;
   }
 }
