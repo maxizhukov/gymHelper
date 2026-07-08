@@ -10,10 +10,14 @@ services:
       # Same-origin in production (Caddy serves the UI and proxies /api),
       # so CORS is effectively a safety net.
       CORS_ORIGIN: https://gym.maksymzhukov.com
+      # Injected from the project-dir .env on the server (/opt/gymhelper/.env,
+      # git-ignored). Defaults to empty locally where that file is absent.
+      DATABASE_URL: ${DATABASE_URL:-}
     expose:
       - "3000" # internal only; not published to the host
     networks:
-      - gymhelper
+      - gymhelper # talk to Caddy
+      - shared # talk to the shared Postgres (by host `postgres`)
 
   caddy:
     build: ./frontend
@@ -33,6 +37,8 @@ services:
 
 networks:
   gymhelper:
+  shared:
+    external: true # created once on the server: `docker network create shared`
 
 volumes:
   caddy_data:
