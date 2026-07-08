@@ -22,7 +22,7 @@ describe('AppController (e2e)', () => {
       .get('/api/message')
       .expect(200)
       .expect({
-        message: 'Hello from NestJS 👋 — the backend is connected!',
+        message: 'Hello from NestJS 👋 — auto-deployed from main! 🚀',
       });
   });
 

@@ -17,7 +17,7 @@ describe('AppController', () => {
   describe('getMessage', () => {
     it('returns a message from the backend', () => {
       expect(appController.getMessage()).toEqual({
-        message: 'Hello from NestJS 👋 — the backend is connected!',
+        message: 'Hello from NestJS 👋 — auto-deployed from main! 🚀',
       });
     });
   });
