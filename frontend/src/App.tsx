@@ -10,12 +10,34 @@ interface AuthenticatedUser {
   username: string
 }
 
+// Key under which the signed-in user is persisted so the session survives a
+// page refresh. Only the (non-secret) user identity is stored — never the
+// password. The backend is stateless and issues no token, so remembering who
+// is signed in is done entirely client-side.
+const AUTH_STORAGE_KEY = 'gymhelper.auth.user'
+
+function loadStoredUser(): AuthenticatedUser | null {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<AuthenticatedUser>
+    if (typeof parsed?.id === 'number' && typeof parsed?.username === 'string') {
+      return { id: parsed.id, username: parsed.username }
+    }
+  } catch {
+    // Corrupt or unavailable storage — fall back to signed-out.
+  }
+  return null
+}
+
 function App() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [state, setState] = useState<LoginState>('idle')
+  const [user, setUser] = useState<AuthenticatedUser | null>(loadStoredUser)
+  const [state, setState] = useState<LoginState>(() =>
+    user ? 'success' : 'idle',
+  )
   const [error, setError] = useState('')
-  const [user, setUser] = useState<AuthenticatedUser | null>(null)
   const [view, setView] = useState<View>('home')
 
   async function handleSubmit(event: FormEvent) {
@@ -38,6 +60,11 @@ function App() {
       }
 
       const data = (await res.json()) as { user: AuthenticatedUser }
+      try {
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user))
+      } catch {
+        // Persisting is best-effort; a full/blocked storage still allows login.
+      }
       setUser(data.user)
       setState('success')
       setPassword('')
@@ -48,6 +75,11 @@ function App() {
   }
 
   function handleLogout() {
+    try {
+      localStorage.removeItem(AUTH_STORAGE_KEY)
+    } catch {
+      // Ignore storage errors on logout.
+    }
     setUser(null)
     setState('idle')
     setView('home')
