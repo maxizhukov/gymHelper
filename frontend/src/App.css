@@ -58,9 +58,15 @@
   gap: 0.35rem;
 }
 
-.field span {
+/* Field.Label renders a <label>; Field.Error renders a <div>. */
+.field label {
   font-size: 0.85rem;
   color: #888;
+}
+
+.field-error {
+  color: #ef5350;
+  font-size: 0.85rem;
 }
 
 .field input {
@@ -78,6 +84,17 @@
 .field input:focus {
   outline: none;
   border-color: #2e7d32;
+}
+
+/* Base UI sets data-invalid on the control once the field fails validation. */
+.field input[data-invalid] {
+  border-color: #c62828;
+}
+
+.separator {
+  height: 1px;
+  margin: 1.5rem 0 0;
+  background: #333;
 }
 
 .login-form button {

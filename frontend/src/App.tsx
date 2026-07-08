@@ -1,4 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState } from 'react'
+import { Button } from '@base-ui/react/button'
+import { Field } from '@base-ui/react/field'
+import { Form } from '@base-ui/react/form'
+import { Input } from '@base-ui/react/input'
+import { Separator } from '@base-ui/react/separator'
 import './App.css'
 
 type LoginState = 'idle' | 'submitting' | 'success' | 'error'
@@ -44,8 +49,7 @@ function App() {
     }
   }, [])
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault()
+  async function handleSubmit() {
     setState('submitting')
     setError('')
 
@@ -94,7 +98,7 @@ function App() {
   if (checking) {
     return (
       <main className="app">
-        <h1>🏋️ GymHelper</h1>
+        <h1>GymHelper</h1>
         <p className="subtitle">Loading…</p>
       </main>
     )
@@ -113,20 +117,20 @@ function App() {
 
     return (
       <main className="app">
-        <h1>🏋️ GymHelper</h1>
+        <h1>GymHelper</h1>
         <div className="card status-ok">
           <p className="label">Signed in as</p>
           <p className="message">{user.username}</p>
         </div>
 
         <nav className="home-nav">
-          <button
+          <Button
             type="button"
             className="nav-button"
             onClick={() => setView('profile')}
           >
-            ⚙️ Profile settings
-          </button>
+            Profile settings
+          </Button>
         </nav>
       </main>
     )
@@ -134,40 +138,44 @@ function App() {
 
   return (
     <main className="app">
-      <h1>🏋️ GymHelper</h1>
+      <h1>GymHelper</h1>
       <p className="subtitle">Sign in to your account</p>
 
-      <form className="card login-form" onSubmit={handleSubmit}>
-        <label className="field">
-          <span>Username</span>
-          <input
+      <Form className="card login-form" onFormSubmit={handleSubmit}>
+        <Field.Root name="username" className="field">
+          <Field.Label>Username</Field.Label>
+          <Input
             type="text"
-            name="username"
             autoComplete="username"
             value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            onValueChange={setUsername}
             required
           />
-        </label>
+          <Field.Error className="field-error" match="valueMissing">Username is required.</Field.Error>
+        </Field.Root>
 
-        <label className="field">
-          <span>Password</span>
-          <input
+        <Field.Root name="password" className="field">
+          <Field.Label>Password</Field.Label>
+          <Input
             type="password"
-            name="password"
             autoComplete="current-password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onValueChange={setPassword}
             required
           />
-        </label>
+          <Field.Error className="field-error" match="valueMissing">Password is required.</Field.Error>
+        </Field.Root>
 
-        {state === 'error' && <p className="error">{error}</p>}
+        {state === 'error' && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
 
-        <button type="submit" disabled={state === 'submitting'}>
+        <Button type="submit" disabled={state === 'submitting'}>
           {state === 'submitting' ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
+        </Button>
+      </Form>
     </main>
   )
 }
@@ -184,9 +192,7 @@ function ProfileSettings({ user, onBack, onLogout }: ProfileSettingsProps) {
   const [pwState, setPwState] = useState<ChangePwState>('idle')
   const [message, setMessage] = useState('')
 
-  async function handleChangePassword(event: FormEvent) {
-    event.preventDefault()
-
+  async function handleChangePassword() {
     // Only rule: the new password must have at least one character.
     if (newPassword.length < 1) {
       setPwState('error')
@@ -231,50 +237,64 @@ function ProfileSettings({ user, onBack, onLogout }: ProfileSettingsProps) {
 
   return (
     <main className="app">
-      <button type="button" className="back-link" onClick={onBack}>
-        ← Back
-      </button>
+      <Button type="button" className="back-link" onClick={onBack}>
+        Back
+      </Button>
       <h1>Profile settings</h1>
       <p className="subtitle">Signed in as {user.username}</p>
 
-      <form className="card login-form" onSubmit={handleChangePassword}>
+      <Form className="card login-form" onFormSubmit={handleChangePassword}>
         <p className="label">Change password</p>
 
-        <label className="field">
-          <span>Current password</span>
-          <input
+        <Field.Root name="currentPassword" className="field">
+          <Field.Label>Current password</Field.Label>
+          <Input
             type="password"
-            name="currentPassword"
             autoComplete="current-password"
             value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
+            onValueChange={setCurrentPassword}
             required
           />
-        </label>
+          <Field.Error className="field-error" match="valueMissing">
+            Current password is required.
+          </Field.Error>
+        </Field.Root>
 
-        <label className="field">
-          <span>New password</span>
-          <input
+        <Field.Root name="newPassword" className="field">
+          <Field.Label>New password</Field.Label>
+          <Input
             type="password"
-            name="newPassword"
             autoComplete="new-password"
             value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
+            onValueChange={setNewPassword}
             required
           />
-        </label>
+          <Field.Error className="field-error" match="valueMissing">
+            New password is required.
+          </Field.Error>
+        </Field.Root>
 
-        {pwState === 'error' && <p className="error">{message}</p>}
-        {pwState === 'success' && <p className="success">{message}</p>}
+        {pwState === 'error' && (
+          <p className="error" role="alert">
+            {message}
+          </p>
+        )}
+        {pwState === 'success' && (
+          <p className="success" role="status">
+            {message}
+          </p>
+        )}
 
-        <button type="submit" disabled={pwState === 'submitting'}>
+        <Button type="submit" disabled={pwState === 'submitting'}>
           {pwState === 'submitting' ? 'Saving…' : 'Change password'}
-        </button>
-      </form>
+        </Button>
+      </Form>
 
-      <button type="button" className="logout-button" onClick={onLogout}>
+      <Separator className="separator" />
+
+      <Button type="button" className="logout-button" onClick={onLogout}>
         Log out
-      </button>
+      </Button>
     </main>
   )
 }

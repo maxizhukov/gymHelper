@@ -56,7 +56,27 @@ credential. If unsure whether something is sensitive, ask before committing.
   browsers don't auto-zoom on focus.
 - Verify the UI works at a narrow viewport before widening it.
 
-## 5. Web + backend specifics
+## 5. UI — Base UI only, no emojis
+
+- **Base UI (`@base-ui/react`) is the only UI component library.** Build every
+  interactive control from its primitives — `Button`, `Form`, `Field`, `Input`,
+  `Separator`, `Dialog`, `Select`, etc. Do not add a second component library
+  (MUI, Radix, shadcn, Chakra, Headless UI, …) and do not hand-roll a control that
+  Base UI already provides.
+- Base UI ships behaviour and accessibility, not styles. Styling stays ours: plain
+  CSS in `App.css` / `index.css`, still **mobile first** (see §4).
+- Prefer the semantic parts over raw elements: `<Field.Root>` + `<Field.Label>` +
+  `<Input>` + `<Field.Error>` instead of a bare `<label>` / `<input>`, and `<Button>`
+  instead of `<button>`. This is what keeps labelling, `aria-*` wiring, validity
+  state, and disabled/focus handling correct for free.
+- Note the package rename: the current package is **`@base-ui/react`**. The old
+  `@base-ui-components/react` is deprecated — never install it.
+- **No emojis anywhere in the UI** — no emoji in copy, labels, buttons, headings, or
+  as icons. Emoji render inconsistently across platforms, read badly to screen
+  readers, and are not a substitute for a real icon. Use plain text labels; if an
+  icon is genuinely needed, use an inline SVG with a proper accessible name.
+
+## 6. Web + backend specifics
 
 - **Input validation** on every API endpoint and form.
 - **AuthN/AuthZ**: never trust the client; enforce permissions server-side.
@@ -64,14 +84,14 @@ credential. If unsure whether something is sensitive, ask before committing.
 - Set security headers, CORS, and rate limiting deliberately, not by copy-paste.
 - Don't log secrets, tokens, or full PII.
 
-## 6. Working style
+## 7. Working style
 
 - When the stack/framework choices are still open, ask before locking one in.
 - Keep dependencies minimal and justified; each new dependency is a maintenance and
   supply-chain cost on a public repo.
 - Explain trade-offs briefly and give a recommendation rather than a survey.
 
-## 7. Production-ready, secure by default
+## 8. Production-ready, secure by default
 
 Write every change as if it ships to production today — not as a prototype to be
 hardened "later." Later rarely comes, and this is a public repo serving real users.
