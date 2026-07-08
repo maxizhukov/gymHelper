@@ -103,6 +103,52 @@
   font-size: 0.9rem;
 }
 
+.success {
+  color: #66bb6a;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.home-nav {
+  margin-top: 1.5rem;
+}
+
+.nav-button {
+  width: 100%;
+  padding: 0.85rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.08);
+  color: inherit;
+  cursor: pointer;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 0.5rem;
+  padding: 0.25rem 0;
+  font-size: 1rem;
+  border: none;
+  background: none;
+  color: #888;
+  cursor: pointer;
+}
+
+.logout-button {
+  width: 100%;
+  margin-top: 1.5rem;
+  padding: 0.85rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border: 1px solid #c62828;
+  border-radius: 8px;
+  background: transparent;
+  color: #ef5350;
+  cursor: pointer;
+}
+
 code {
   background: rgba(128, 128, 128, 0.2);
   padding: 0.1em 0.3em;

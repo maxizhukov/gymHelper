@@ -112,4 +112,25 @@ export class AuthService implements OnModuleInit {
 
     return { id: user.id, username: user.username };
   }
+
+  /**
+   * Changes a user's password. The current password must be supplied and verified
+   * server-side (never trust the client) before the new hash is stored. Throws
+   * UnauthorizedException if the current credentials are wrong.
+   */
+  async changePassword(
+    username: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    // Reuse the constant-time credential check; this authorizes the change.
+    const user = await this.validateUser(username, currentPassword);
+
+    const newHash = await hashPassword(newPassword);
+    await this.db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [
+      newHash,
+      user.id,
+    ]);
+    this.logger.log(`Password changed for user "${user.username}".`);
+  }
 }
