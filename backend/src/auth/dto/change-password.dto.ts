@@ -1,18 +1,20 @@
 import { BadRequestException } from '@nestjs/common';
 
 export interface ChangePasswordDto {
-  username: string;
   currentPassword: string;
   newPassword: string;
 }
 
-const MAX_USERNAME_LENGTH = 100;
 const MAX_PASSWORD_LENGTH = 200;
 
 /**
  * Validates and normalizes an untrusted change-password request body. Assumes
  * hostile input: rejects anything that is not a well-formed
- * { username, currentPassword, newPassword }.
+ * { currentPassword, newPassword }.
+ *
+ * The account is never taken from the body — it comes from the authenticated
+ * session — so no username is accepted here (the client cannot target another
+ * user's account).
  *
  * Per product rule, the only strength requirement on the new password is that it
  * has at least one character. The max-length cap is a hostile-input/DoS guard,
@@ -23,14 +25,8 @@ export function validateChangePasswordDto(body: unknown): ChangePasswordDto {
     throw new BadRequestException('Request body must be a JSON object.');
   }
 
-  const { username, currentPassword, newPassword } = body as Record<
-    string,
-    unknown
-  >;
+  const { currentPassword, newPassword } = body as Record<string, unknown>;
 
-  if (typeof username !== 'string' || username.trim().length === 0) {
-    throw new BadRequestException('username is required.');
-  }
   if (typeof currentPassword !== 'string' || currentPassword.length === 0) {
     throw new BadRequestException('currentPassword is required.');
   }
@@ -40,9 +36,6 @@ export function validateChangePasswordDto(body: unknown): ChangePasswordDto {
       'newPassword must have at least 1 character.',
     );
   }
-  if (username.length > MAX_USERNAME_LENGTH) {
-    throw new BadRequestException('username is too long.');
-  }
   if (
     currentPassword.length > MAX_PASSWORD_LENGTH ||
     newPassword.length > MAX_PASSWORD_LENGTH
@@ -50,5 +43,5 @@ export function validateChangePasswordDto(body: unknown): ChangePasswordDto {
     throw new BadRequestException('password is too long.');
   }
 
-  return { username: username.trim(), currentPassword, newPassword };
+  return { currentPassword, newPassword };
 }

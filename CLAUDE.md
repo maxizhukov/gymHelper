@@ -71,6 +71,32 @@ credential. If unsure whether something is sensitive, ask before committing.
   supply-chain cost on a public repo.
 - Explain trade-offs briefly and give a recommendation rather than a survey.
 
+## 7. Production-ready, secure by default
+
+Write every change as if it ships to production today — not as a prototype to be
+hardened "later." Later rarely comes, and this is a public repo serving real users.
+
+- **Authentication uses server-side sessions.** The server is the source of truth
+  for who is signed in: on login, create a session and return an opaque,
+  high-entropy token in an **HttpOnly, `SameSite`, `Secure`-in-production cookie**.
+  Never keep identity or trust decisions in client storage (`localStorage`, a
+  client-sent username) — the client is untrusted. Store only a **hash** of the
+  session token at rest, set an expiry, and invalidate sessions on logout and on
+  password change.
+- **Derive the acting user from the session, never from the request body.** An
+  endpoint must act on the authenticated principal, not on an id/username the client
+  supplies — otherwise one user can act as another.
+- **Secure defaults, not afterthoughts:** validate and sanitize all input, enforce
+  authZ server-side, parameterized queries only, deliberate CORS/headers/rate limits,
+  constant-time comparisons for secrets, and no secrets or full PII in logs.
+- **Fail safe:** on any doubt (missing session, malformed input, unreachable
+  dependency) deny the request rather than falling through to a permissive path.
+- **Handle every error path**, including the ones "that can't happen." Don't swallow
+  exceptions; surface actionable errors without leaking internals to the client.
+- Prefer Node/framework built-ins and well-vetted primitives for security-sensitive
+  code; when you must hand-roll (to avoid a dependency), follow the established
+  pattern in this repo and keep it auditable.
+
 ---
 
 _Update this file as the project's stack and conventions solidify._

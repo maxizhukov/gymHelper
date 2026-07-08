@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import './App.css'
 
 type LoginState = 'idle' | 'submitting' | 'success' | 'error'
@@ -10,35 +10,39 @@ interface AuthenticatedUser {
   username: string
 }
 
-// Key under which the signed-in user is persisted so the session survives a
-// page refresh. Only the (non-secret) user identity is stored — never the
-// password. The backend is stateless and issues no token, so remembering who
-// is signed in is done entirely client-side.
-const AUTH_STORAGE_KEY = 'gymhelper.auth.user'
-
-function loadStoredUser(): AuthenticatedUser | null {
-  try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<AuthenticatedUser>
-    if (typeof parsed?.id === 'number' && typeof parsed?.username === 'string') {
-      return { id: parsed.id, username: parsed.username }
-    }
-  } catch {
-    // Corrupt or unavailable storage — fall back to signed-out.
-  }
-  return null
-}
-
 function App() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [user, setUser] = useState<AuthenticatedUser | null>(loadStoredUser)
-  const [state, setState] = useState<LoginState>(() =>
-    user ? 'success' : 'idle',
-  )
+  const [user, setUser] = useState<AuthenticatedUser | null>(null)
+  const [state, setState] = useState<LoginState>('idle')
   const [error, setError] = useState('')
   const [view, setView] = useState<View>('home')
+  // While true, we're still asking the server whether a session cookie exists.
+  const [checking, setChecking] = useState(true)
+
+  // Restore the session on load by asking the server who we are. The session
+  // lives in an HttpOnly cookie the browser sends automatically — nothing
+  // sensitive is kept in client storage.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        if (!cancelled && res.ok) {
+          const data = (await res.json()) as { user: AuthenticatedUser }
+          setUser(data.user)
+          setState('success')
+        }
+      } catch {
+        // Network error — treat as signed out; the login form will show.
+      } finally {
+        if (!cancelled) setChecking(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -49,6 +53,7 @@ function App() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ username, password }),
       })
 
@@ -60,11 +65,6 @@ function App() {
       }
 
       const data = (await res.json()) as { user: AuthenticatedUser }
-      try {
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user))
-      } catch {
-        // Persisting is best-effort; a full/blocked storage still allows login.
-      }
       setUser(data.user)
       setState('success')
       setPassword('')
@@ -74,11 +74,14 @@ function App() {
     }
   }
 
-  function handleLogout() {
+  async function handleLogout() {
     try {
-      localStorage.removeItem(AUTH_STORAGE_KEY)
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      })
     } catch {
-      // Ignore storage errors on logout.
+      // Even if the request fails, drop local state so the UI signs out.
     }
     setUser(null)
     setState('idle')
@@ -86,6 +89,15 @@ function App() {
     setUsername('')
     setPassword('')
     setError('')
+  }
+
+  if (checking) {
+    return (
+      <main className="app">
+        <h1>🏋️ GymHelper</h1>
+        <p className="subtitle">Loading…</p>
+      </main>
+    )
   }
 
   if (state === 'success' && user) {
@@ -189,8 +201,8 @@ function ProfileSettings({ user, onBack, onLogout }: ProfileSettingsProps) {
       const res = await fetch('/api/auth/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
-          username: user.username,
           currentPassword,
           newPassword,
         }),
