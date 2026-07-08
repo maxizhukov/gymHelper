@@ -41,3 +41,35 @@ jobs:
           docker compose up -d --build --remove-orphans
           docker image prune -f
           REMOTE
+
+      # Once the new stack is live, wait a few seconds for the backend to accept
+      # traffic, then ping its deploy webhook. The app turns that into a Telegram
+      # message so we get notified that a new version is deployed. Best-effort:
+      # a failed ping must not mark an otherwise-successful deploy as failed.
+      - name: Notify deploy via webhook
+        continue-on-error: true
+        env:
+          DEPLOY_WEBHOOK_URL: https://gym.maksymzhukov.com/api/deploy/notify
+          DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+        run: |
+          set -euo pipefail
+
+          # The webhook fans out a message to Telegram, so it's gated by a shared
+          # secret. Skip cleanly if the secret isn't configured yet.
+          if [ -z "${DEPLOY_WEBHOOK_SECRET:-}" ]; then
+            echo "DEPLOY_WEBHOOK_SECRET not set; skipping deploy notification."
+            exit 0
+          fi
+
+          # Wait 5s so the freshly (re)built containers are ready to serve.
+          sleep 5
+
+          payload=$(printf '{"version":"%s","ref":"%s","actor":"%s"}' \
+            "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_ACTOR")
+
+          # --retry rides out the brief window while the backend finishes starting.
+          curl -fsS --retry 5 --retry-delay 3 --retry-connrefused \
+            -X POST "$DEPLOY_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Deploy-Secret: $DEPLOY_WEBHOOK_SECRET" \
+            -d "$payload"

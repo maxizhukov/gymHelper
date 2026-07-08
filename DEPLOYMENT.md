@@ -44,6 +44,16 @@ docker image prune -f
 Only changed images rebuild; unchanged containers keep running. You can also trigger
 a manual redeploy from the repo's **Actions → Deploy → Run workflow**.
 
+### Deploy notification
+
+After the stack is live, the workflow waits 5 seconds and POSTs to the backend's
+`/api/deploy/notify` webhook (authorized by the `DEPLOY_WEBHOOK_SECRET` shared
+secret). The backend turns that into a Telegram message so you get pinged that a
+new version is deployed. It's best-effort — a failed ping is logged but does not
+fail the deploy. Requires `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and
+`DEPLOY_WEBHOOK_SECRET` in the server `.env`, plus the `DEPLOY_WEBHOOK_SECRET`
+GitHub Actions secret (see below).
+
 ## First-time setup (once)
 
 1. **Add the GitHub secret.** Repo → Settings → Secrets and variables → Actions →
@@ -88,6 +98,11 @@ docker compose up -d --build
 
 ## Secrets
 
-There are no application secrets yet. When the app needs them (e.g. a database URL),
-put them in a git-ignored `/opt/gymhelper/.env` on the server and reference them from
-`docker-compose.yml` via `env_file:` — **never** commit real values (this repo is public).
+Application secrets live in a git-ignored `/opt/gymhelper/.env` on the server and are
+referenced from `docker-compose.yml` — **never** commit real values (this repo is public).
+See [`.env.example`](.env.example) for every variable. The deploy notification needs:
+
+- `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` — the bot (from @BotFather) and the channel
+  it posts to (server `.env` only).
+- `DEPLOY_WEBHOOK_SECRET` — a long random string, set in **both** the server `.env` and
+  as a GitHub Actions repository secret (so the workflow can authenticate to the webhook).

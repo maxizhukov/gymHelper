@@ -13,6 +13,11 @@ services:
       # Injected from the project-dir .env on the server (/opt/gymhelper/.env,
       # git-ignored). Defaults to empty locally where that file is absent.
       DATABASE_URL: ${DATABASE_URL:-}
+      # Telegram deploy notifications + the shared secret the CI deploy webhook
+      # must present. All git-ignored; empty locally where .env is absent.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      DEPLOY_WEBHOOK_SECRET: ${DEPLOY_WEBHOOK_SECRET:-}
     expose:
       - "3000" # internal only; not published to the host
     networks:
