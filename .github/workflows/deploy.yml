@@ -24,9 +24,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Write the deploy key from the repo secret.
+          # Write the deploy key from the repo secret (stored base64-encoded so
+          # newlines can't be mangled when pasting into the GitHub secret).
           mkdir -p ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          echo "$DEPLOY_SSH_KEY" | base64 -d > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
