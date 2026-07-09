@@ -11,8 +11,9 @@ services:
       # so CORS is effectively a safety net.
       CORS_ORIGIN: https://gym.maksymzhukov.com
       # Injected from the project-dir .env on the server (/opt/gymhelper/.env,
-      # git-ignored). Defaults to empty locally where that file is absent.
-      DATABASE_URL: ${DATABASE_URL:-}
+      # git-ignored). This is the production stack — no database, no stack, so
+      # compose refuses to bring it up rather than let the backend crash-loop.
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set (see /opt/gymhelper/.env)}
       # Telegram deploy notifications + the shared secret the CI deploy webhook
       # must present. All git-ignored; empty locally where .env is absent.
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
@@ -20,6 +21,21 @@ services:
       DEPLOY_WEBHOOK_SECRET: ${DEPLOY_WEBHOOK_SECRET:-}
     expose:
       - "3000" # internal only; not published to the host
+    # /api/db-health round-trips a real query, so "healthy" means the database is
+    # reachable — not merely that the process is listening. Probed with node
+    # because the slim runtime image ships neither curl nor wget.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/db-health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - gymhelper # talk to Caddy
       - shared # talk to the shared Postgres (by host `postgres`)

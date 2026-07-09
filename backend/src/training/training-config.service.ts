@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { bootstrapSchema } from '../database/bootstrap-schema';
 import { DatabaseService } from '../database/database.service';
 
 /**
@@ -32,16 +33,9 @@ export class TrainingConfigService implements OnModuleInit {
   constructor(private readonly db: DatabaseService) {}
 
   async onModuleInit(): Promise<void> {
-    // Bootstrap the schema on startup. Tolerate an unavailable database so the
-    // app can still boot (mirrors AuthService's behaviour).
-    try {
-      await this.ensureSchema();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'unknown error';
-      this.logger.warn(
-        `Training config bootstrap skipped (is the database reachable?): ${message}`,
-      );
-    }
+    await bootstrapSchema(this.logger, 'Training config', () =>
+      this.ensureSchema(),
+    );
   }
 
   private async ensureSchema(): Promise<void> {

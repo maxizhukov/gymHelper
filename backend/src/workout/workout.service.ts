@@ -7,6 +7,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import type { PoolClient } from 'pg';
+import { bootstrapSchema } from '../database/bootstrap-schema';
 import { DatabaseService } from '../database/database.service';
 import { TrainingConfigService } from '../training/training-config.service';
 
@@ -180,16 +181,7 @@ export class WorkoutService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    // Tolerate an unavailable database so the app can still boot (mirrors
-    // AuthService's behaviour).
-    try {
-      await this.ensureSchema();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'unknown error';
-      this.logger.warn(
-        `Workout bootstrap skipped (is the database reachable?): ${message}`,
-      );
-    }
+    await bootstrapSchema(this.logger, 'Workout', () => this.ensureSchema());
   }
 
   /**

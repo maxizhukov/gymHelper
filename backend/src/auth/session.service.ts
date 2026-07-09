@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
+import { bootstrapSchema } from '../database/bootstrap-schema';
 import { DatabaseService } from '../database/database.service';
 import { AuthenticatedUser } from './auth.service';
 
@@ -28,16 +29,7 @@ export class SessionService implements OnModuleInit {
   constructor(private readonly db: DatabaseService) {}
 
   async onModuleInit(): Promise<void> {
-    // Bootstrap the sessions table on startup. Tolerate an unavailable database
-    // so the app can still boot (mirrors AuthService's behaviour).
-    try {
-      await this.ensureSchema();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'unknown error';
-      this.logger.warn(
-        `Session bootstrap skipped (is the database reachable?): ${message}`,
-      );
-    }
+    await bootstrapSchema(this.logger, 'Session', () => this.ensureSchema());
   }
 
   private async ensureSchema(): Promise<void> {

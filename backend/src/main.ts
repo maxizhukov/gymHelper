@@ -24,4 +24,10 @@ async function bootstrap() {
   await app.listen(port);
   console.log(`Backend listening on http://localhost:${port}/api`);
 }
-void bootstrap();
+// A failed bootstrap (missing DATABASE_URL, an unreachable database, an aborted
+// migration) must exit non-zero so the container restarts rather than sit there
+// serving nothing.
+bootstrap().catch((err: unknown) => {
+  console.error('Backend failed to start:', err);
+  process.exit(1);
+});

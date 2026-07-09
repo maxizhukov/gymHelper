@@ -18,12 +18,14 @@ export class HealthController {
       await this.db.ping();
       return { status: 'ok', database: 'up' };
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'unknown error';
+      // The driver's message can name hosts, users, and ports. Log it; tell the
+      // client only that the database is down.
+      const message = err instanceof Error ? err.stack : String(err);
       this.logger.error(`Database health check failed: ${message}`);
       throw new ServiceUnavailableException({
         status: 'error',
         database: 'down',
-        message,
+        message: 'Database is unavailable.',
       });
     }
   }

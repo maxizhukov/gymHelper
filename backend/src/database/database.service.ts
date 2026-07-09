@@ -8,8 +8,15 @@ export class DatabaseService implements OnModuleDestroy {
   private readonly pool: Pool;
 
   constructor(config: ConfigService) {
-    const connectionString = config.get<string>('DATABASE_URL');
+    const connectionString = config.get<string>('DATABASE_URL')?.trim();
     if (!connectionString) {
+      // In production an unconfigured database is not a degraded mode, it is a
+      // misconfigured deploy: refuse to start rather than serve a broken app.
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          'DATABASE_URL is not set. Refusing to start in production without a database.',
+        );
+      }
       this.logger.warn(
         'DATABASE_URL is not set — database queries will fail until it is configured.',
       );
