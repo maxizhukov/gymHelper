@@ -21,13 +21,26 @@ import { TrainingConfigService } from '../training/training-config.service';
  * keypad input in `workout_set_drafts`, and an append-only audit of what the
  * user did in `workout_events`.
  *
- * The exercise order is a *mutable queue*, not the training day's list:
- * `workout_session_exercises.position` is the running order, rewritten in place
- * whenever the user defers an exercise. The cursor names a position in that
- * queue, and because only exercises with no sets logged against them may move
- * (see `deferExercise`), the cursor is always the first unfinished exercise in
- * the current queue. Resuming a workout therefore restores the reordered queue,
- * never the original list.
+ * Identity and order are deliberately separate concerns:
+ *
+ * - **Identity** is `workout_session_exercises.id` — a surrogate key minted when
+ *   the workout starts and never reused, renumbered, or reassigned. It answers
+ *   "which exercise was this?". Everything that records what the user *did*
+ *   (`workout_sets`, `workout_set_drafts`, `workout_events`) points at it.
+ * - **Order** is `workout_session_exercises.position` — a mutable queue index,
+ *   rewritten in place whenever the user defers an exercise. It answers "when
+ *   does this exercise come up?" and nothing else. Only the session cursor
+ *   (`workout_sessions.exercise_position`) reads it.
+ *
+ * Deferring an exercise therefore rewrites positions and touches no history: a
+ * logged set names the exercise it belongs to directly, so the queue can be
+ * reordered any number of times and every set still resolves to the lift that
+ * was actually performed.
+ *
+ * The identity is per session, not per plan row: the exercise list is
+ * snapshotted at start (`name`, plus `catalog_exercise_id` for provenance), so
+ * editing or deleting a plan exercise later cannot rename, renumber, or orphan
+ * the sets of a workout already recorded.
  */
 
 /** How many sets each exercise gets. Snapshotted onto the session at start. */
@@ -127,9 +140,12 @@ interface SessionRow {
   focus: string;
   started_at: Date;
   completed_at: Date | null;
-  exercise_index: number;
+  /** Cursor into the queue — a position, never an exercise identity. */
+  exercise_position: number;
   set_number: number;
   resting_since: Date | null;
+  /** When the user arrived at the current set; stamped onto the set it logs. */
+  set_started_at: Date | null;
   planned_reps: number;
   rest_seconds: number;
   sets_per_exercise: number;
@@ -141,7 +157,7 @@ interface SessionRow {
 // rather than the browser's.
 const SESSION_SELECT = `
   SELECT s.id, s.user_id, s.training_day_id, s.started_at, s.completed_at,
-         s.exercise_index, s.set_number, s.resting_since,
+         s.exercise_position, s.set_number, s.resting_since, s.set_started_at,
          s.planned_reps, s.rest_seconds, s.sets_per_exercise,
          d.slug, d.day, d.focus,
          now() AS server_now
@@ -151,6 +167,12 @@ const SESSION_SELECT = `
 
 /** An active session is one that was neither completed nor abandoned. */
 const ACTIVE_PREDICATE = 's.completed_at IS NULL AND s.abandoned_at IS NULL';
+
+/** Runs a query on the transaction's client when there is one, else the pool. */
+type Run = <T extends Record<string, unknown>>(
+  text: string,
+  params: unknown[],
+) => Promise<{ rows: T[]; rowCount: number | null }>;
 
 @Injectable()
 export class WorkoutService implements OnModuleInit {
@@ -174,7 +196,21 @@ export class WorkoutService implements OnModuleInit {
     }
   }
 
-  private async ensureSchema(): Promise<void> {
+  /**
+   * Brings the schema to its current shape: create what is missing, migrate what
+   * predates the identity/order split, then index the final columns. Split in
+   * three because the indexes name columns that only exist after the migration,
+   * and the migration needs the tables to exist first.
+   */
+  async ensureSchema(): Promise<void> {
+    await this.createTables();
+    await this.db.transaction((client) =>
+      this.migrateToExerciseIdentity(client),
+    );
+    await this.createIndexes();
+  }
+
+  private async createTables(): Promise<void> {
     // planned_reps / rest_seconds / sets_per_exercise are snapshotted from the
     // user's config when the workout starts, so editing the config mid-workout
     // does not reshape a workout already underway.
@@ -186,15 +222,102 @@ export class WorkoutService implements OnModuleInit {
         started_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
         completed_at      TIMESTAMPTZ,
         abandoned_at      TIMESTAMPTZ,
-        exercise_index    INTEGER NOT NULL DEFAULT 0 CHECK (exercise_index >= 0),
+        exercise_position INTEGER NOT NULL DEFAULT 0 CHECK (exercise_position >= 0),
         set_number        INTEGER NOT NULL DEFAULT 1 CHECK (set_number >= 1),
         resting_since     TIMESTAMPTZ,
+        set_started_at    TIMESTAMPTZ DEFAULT now(),
         planned_reps      INTEGER NOT NULL CHECK (planned_reps BETWEEN 1 AND 100),
         rest_seconds      INTEGER NOT NULL CHECK (rest_seconds BETWEEN 0 AND 3600),
         sets_per_exercise INTEGER NOT NULL CHECK (sets_per_exercise BETWEEN 1 AND 20)
       )
     `);
 
+    // The session's exercise queue, and the workout's exercise identities.
+    //
+    // `id` is the identity: minted here, pointed at by every row that records
+    // what the user did, and never reused. `position` is the running order,
+    // rewritten in place whenever the user defers. Nothing but the cursor reads
+    // `position`, so reordering the queue can never reattribute a logged set.
+    //
+    // The exercise list is snapshotted per session, so editing the plan later
+    // cannot renumber or rename the exercises of a workout already in progress.
+    // `catalog_exercise_id` is kept for provenance but nulls out if the plan row
+    // is deleted — the snapshotted name is what the workout screen renders, and
+    // history stays intact either way.
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS workout_session_exercises (
+        id                  SERIAL PRIMARY KEY,
+        session_id          INTEGER NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
+        position            INTEGER NOT NULL,
+        catalog_exercise_id INTEGER REFERENCES exercises(id) ON DELETE SET NULL,
+        name                TEXT NOT NULL,
+        deferred_at         TIMESTAMPTZ,
+        UNIQUE (session_id, position)
+      )
+    `);
+    // Added after the table shipped; workouts already in flight keep their rows.
+    await this.db.query(
+      'ALTER TABLE workout_session_exercises ADD COLUMN IF NOT EXISTS deferred_at TIMESTAMPTZ',
+    );
+
+    // One row per completed set, naming the exercise it belongs to by identity.
+    // The unique key makes the write idempotent, so a retried "Finish set"
+    // overwrites rather than duplicating.
+    //
+    // planned_* is what the workout asked for, actual_* what the user managed.
+    // started_at/completed_at bracket the set; rest_duration is the pause taken
+    // after it, filled in when rest ends (null for a set nobody rested after).
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS workout_sets (
+        id                 SERIAL PRIMARY KEY,
+        workout_session_id INTEGER NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
+        exercise_id        INTEGER NOT NULL REFERENCES workout_session_exercises(id) ON DELETE CASCADE,
+        set_number         INTEGER NOT NULL,
+        planned_reps       INTEGER NOT NULL,
+        actual_reps        INTEGER NOT NULL CHECK (actual_reps BETWEEN 1 AND 100),
+        planned_weight     NUMERIC(6, 2) CHECK (planned_weight >= 0 AND planned_weight <= 1000),
+        actual_weight      NUMERIC(6, 2) NOT NULL CHECK (actual_weight >= 0 AND actual_weight <= 1000),
+        started_at         TIMESTAMPTZ,
+        completed_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+        rest_duration      INTEGER CHECK (rest_duration >= 0),
+        created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (workout_session_id, exercise_id, set_number)
+      )
+    `);
+
+    // Keypad input persisted as it is typed, before the set is committed. Keyed
+    // to the exercise, so a crash mid-entry restores exactly what was on screen
+    // and a deferred exercise carries its half-typed numbers with it.
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS workout_set_drafts (
+        session_id  INTEGER NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
+        exercise_id INTEGER NOT NULL REFERENCES workout_session_exercises(id) ON DELETE CASCADE,
+        set_number  INTEGER NOT NULL,
+        weight      NUMERIC(6, 2) CHECK (weight >= 0 AND weight <= 1000),
+        reps        INTEGER CHECK (reps BETWEEN 1 AND 100),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (session_id, exercise_id, set_number)
+      )
+    `);
+
+    // Append-only audit of every significant action, so the workout can be
+    // reconstructed or inspected after the fact. `exercise_id` says which
+    // exercise; `exercise_position` records where it sat in the queue at the
+    // time, which is a fact about the past and so is never rewritten.
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS workout_events (
+        id                SERIAL PRIMARY KEY,
+        session_id        INTEGER NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
+        kind              TEXT NOT NULL,
+        exercise_position INTEGER,
+        exercise_id       INTEGER REFERENCES workout_session_exercises(id) ON DELETE SET NULL,
+        set_number        INTEGER,
+        created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+  }
+
+  private async createIndexes(): Promise<void> {
     // At most one unfinished workout per user. The partial unique index is what
     // makes "start" safe against a double tap: the second insert loses.
     await this.db.query(`
@@ -205,77 +328,233 @@ export class WorkoutService implements OnModuleInit {
     await this.db.query(
       'CREATE INDEX IF NOT EXISTS workout_sessions_user_id_idx ON workout_sessions (user_id)',
     );
-
-    // The session's exercise queue. Seeded from the training day at start, then
-    // owned by the session: `position` is rewritten whenever the user defers an
-    // exercise, and it — not the plan — is the order the workout runs in.
-    //
-    // The exercise list is snapshotted per session, so editing the plan later
-    // cannot renumber or rename the exercises of a workout already in progress.
-    // The exercise_id link is kept for provenance but nulls out if the plan row
-    // is deleted — the name is what the workout screen renders.
-    await this.db.query(`
-      CREATE TABLE IF NOT EXISTS workout_session_exercises (
-        session_id  INTEGER NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
-        position    INTEGER NOT NULL,
-        exercise_id INTEGER REFERENCES exercises(id) ON DELETE SET NULL,
-        name        TEXT NOT NULL,
-        deferred_at TIMESTAMPTZ,
-        PRIMARY KEY (session_id, position)
-      )
-    `);
-    // Added after the table shipped; workouts already in flight keep their rows.
     await this.db.query(
-      'ALTER TABLE workout_session_exercises ADD COLUMN IF NOT EXISTS deferred_at TIMESTAMPTZ',
+      'CREATE INDEX IF NOT EXISTS workout_session_exercises_session_id_idx ON workout_session_exercises (session_id)',
     );
-
-    // One row per completed set. The unique key makes the write idempotent, so
-    // a retried "Finish set" overwrites rather than duplicating.
-    await this.db.query(`
-      CREATE TABLE IF NOT EXISTS workout_sets (
-        id             SERIAL PRIMARY KEY,
-        session_id     INTEGER NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
-        exercise_index INTEGER NOT NULL,
-        set_number     INTEGER NOT NULL,
-        target_reps    INTEGER NOT NULL,
-        reps           INTEGER NOT NULL CHECK (reps BETWEEN 1 AND 100),
-        weight         NUMERIC(6, 2) NOT NULL CHECK (weight >= 0 AND weight <= 1000),
-        completed_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-        UNIQUE (session_id, exercise_index, set_number)
-      )
-    `);
     await this.db.query(
-      'CREATE INDEX IF NOT EXISTS workout_sets_session_id_idx ON workout_sets (session_id)',
+      'CREATE INDEX IF NOT EXISTS workout_sets_workout_session_id_idx ON workout_sets (workout_session_id)',
     );
-
-    // Keypad input persisted as it is typed, before the set is committed. Keyed
-    // to the cursor so a crash mid-entry restores exactly what was on screen.
-    await this.db.query(`
-      CREATE TABLE IF NOT EXISTS workout_set_drafts (
-        session_id     INTEGER NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
-        exercise_index INTEGER NOT NULL,
-        set_number     INTEGER NOT NULL,
-        weight         NUMERIC(6, 2) CHECK (weight >= 0 AND weight <= 1000),
-        reps           INTEGER CHECK (reps BETWEEN 1 AND 100),
-        updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-        PRIMARY KEY (session_id, exercise_index, set_number)
-      )
-    `);
-
-    // Append-only audit of every significant action, so the workout can be
-    // reconstructed or inspected after the fact.
-    await this.db.query(`
-      CREATE TABLE IF NOT EXISTS workout_events (
-        id             SERIAL PRIMARY KEY,
-        session_id     INTEGER NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
-        kind           TEXT NOT NULL,
-        exercise_index INTEGER,
-        set_number     INTEGER,
-        created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
-      )
-    `);
+    // Resolving an exercise's history — "what did I last lift on this?" — walks
+    // sets by exercise, never by position.
+    await this.db.query(
+      'CREATE INDEX IF NOT EXISTS workout_sets_exercise_id_idx ON workout_sets (exercise_id)',
+    );
     await this.db.query(
       'CREATE INDEX IF NOT EXISTS workout_events_session_id_idx ON workout_events (session_id)',
+    );
+  }
+
+  private async columnExists(
+    client: PoolClient,
+    table: string,
+    column: string,
+  ): Promise<boolean> {
+    const result = await client.query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = $1 AND column_name = $2`,
+      [table, column],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Migrates a database that identified exercises by their queue position onto
+   * the identity/order split described at the top of this file. Idempotent and
+   * guarded on the legacy columns, so it is a no-op on a fresh database and on
+   * every boot after the first.
+   *
+   * Backfilling `workout_sets.exercise_id` from `exercise_index` is exact, not a
+   * best guess. Under the old rules an exercise could only be deferred while it
+   * had no sets logged against it, and a defer renumbered only the cursor and
+   * the positions behind it. A position with sets under it therefore never
+   * moved, and its current occupant is the exercise those sets were recorded
+   * against. The same argument covers the drafts, which were deleted from the
+   * cursor back on every defer.
+   *
+   * Events are the exception: an event's `exercise_index` was the queue position
+   * *at the time it happened*, and a later defer may have moved a different
+   * exercise there. Rather than invent an identity for historical events, the
+   * column is renamed to `exercise_position` — which is what it always was — and
+   * `exercise_id` is left null for rows written before this migration.
+   */
+  private async migrateToExerciseIdentity(client: PoolClient): Promise<void> {
+    // ---- workout_sessions: the cursor is a position; say so. ----------------
+    if (await this.columnExists(client, 'workout_sessions', 'exercise_index')) {
+      await client.query(
+        'ALTER TABLE workout_sessions RENAME COLUMN exercise_index TO exercise_position',
+      );
+    }
+    await client.query(
+      'ALTER TABLE workout_sessions ADD COLUMN IF NOT EXISTS set_started_at TIMESTAMPTZ DEFAULT now()',
+    );
+
+    // ---- workout_session_exercises: mint the identities. --------------------
+    // The old primary key was (session_id, position) — an identity built out of
+    // a mutable position, which is the bug this migration exists to remove.
+    if (!(await this.columnExists(client, 'workout_session_exercises', 'id'))) {
+      await client.query(
+        'ALTER TABLE workout_session_exercises DROP CONSTRAINT IF EXISTS workout_session_exercises_pkey',
+      );
+      await client.query(
+        'ALTER TABLE workout_session_exercises ADD COLUMN id SERIAL',
+      );
+      await client.query(
+        'ALTER TABLE workout_session_exercises ADD PRIMARY KEY (id)',
+      );
+      await client.query(
+        `ALTER TABLE workout_session_exercises
+           ADD CONSTRAINT workout_session_exercises_session_id_position_key
+           UNIQUE (session_id, position)`,
+      );
+    }
+    // Frees the name `exercise_id` to mean the identity everywhere else.
+    if (
+      await this.columnExists(
+        client,
+        'workout_session_exercises',
+        'exercise_id',
+      )
+    ) {
+      await client.query(
+        'ALTER TABLE workout_session_exercises RENAME COLUMN exercise_id TO catalog_exercise_id',
+      );
+    }
+
+    // ---- workout_sets: point at the exercise, not at a slot in the queue. ---
+    if (await this.columnExists(client, 'workout_sets', 'exercise_index')) {
+      await client.query(
+        'ALTER TABLE workout_sets RENAME COLUMN session_id TO workout_session_id',
+      );
+      await client.query(
+        'ALTER TABLE workout_sets RENAME COLUMN target_reps TO planned_reps',
+      );
+      await client.query(
+        'ALTER TABLE workout_sets RENAME COLUMN reps TO actual_reps',
+      );
+      await client.query(
+        'ALTER TABLE workout_sets RENAME COLUMN weight TO actual_weight',
+      );
+      await client.query(
+        'ALTER INDEX IF EXISTS workout_sets_session_id_idx RENAME TO workout_sets_workout_session_id_idx',
+      );
+
+      // Postgres does not rename a constraint when its column is renamed, so a
+      // migrated database would otherwise keep the old names for good and drift
+      // from a freshly created one. Converge them, or the next migration that
+      // says DROP CONSTRAINT works on exactly one of the two.
+      await client.query(
+        `ALTER TABLE workout_sets
+           RENAME CONSTRAINT workout_sets_session_id_fkey TO workout_sets_workout_session_id_fkey`,
+      );
+      await client.query(
+        'ALTER TABLE workout_sets RENAME CONSTRAINT workout_sets_reps_check TO workout_sets_actual_reps_check',
+      );
+      await client.query(
+        'ALTER TABLE workout_sets RENAME CONSTRAINT workout_sets_weight_check TO workout_sets_actual_weight_check',
+      );
+
+      // Unknown for sets logged before these columns existed. Left null rather
+      // than backfilled with a plausible-looking guess.
+      await client.query(
+        `ALTER TABLE workout_sets
+           ADD COLUMN IF NOT EXISTS planned_weight NUMERIC(6, 2)
+             CHECK (planned_weight >= 0 AND planned_weight <= 1000),
+           ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ,
+           ADD COLUMN IF NOT EXISTS rest_duration INTEGER CHECK (rest_duration >= 0),
+           ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ`,
+      );
+      // A set's row was created when the set was completed, so that is the
+      // truthful created_at for historical rows — not the time of this migration.
+      await client.query(
+        'UPDATE workout_sets SET created_at = completed_at WHERE created_at IS NULL',
+      );
+      await client.query(
+        `ALTER TABLE workout_sets
+           ALTER COLUMN created_at SET NOT NULL,
+           ALTER COLUMN created_at SET DEFAULT now()`,
+      );
+
+      await client.query(
+        'ALTER TABLE workout_sets ADD COLUMN IF NOT EXISTS exercise_id INTEGER',
+      );
+      await client.query(
+        `UPDATE workout_sets ws
+            SET exercise_id = e.id
+           FROM workout_session_exercises e
+          WHERE e.session_id = ws.workout_session_id
+            AND e.position = ws.exercise_index
+            AND ws.exercise_id IS NULL`,
+      );
+
+      // Fail safe: a set we cannot attribute to an exercise must not be silently
+      // dropped or silently kept. Abort the transaction and leave the old schema
+      // in place for a human to look at.
+      const orphans = await client.query(
+        'SELECT count(*) AS count FROM workout_sets WHERE exercise_id IS NULL',
+      );
+      const orphanCount = Number(
+        (orphans.rows[0] as { count: string } | undefined)?.count ?? 0,
+      );
+      if (orphanCount > 0) {
+        throw new Error(
+          `Cannot migrate workout_sets: ${orphanCount} set(s) have no exercise at their recorded position.`,
+        );
+      }
+
+      await client.query(
+        `ALTER TABLE workout_sets
+           ALTER COLUMN exercise_id SET NOT NULL,
+           ADD CONSTRAINT workout_sets_exercise_id_fkey
+             FOREIGN KEY (exercise_id) REFERENCES workout_session_exercises(id) ON DELETE CASCADE,
+           DROP CONSTRAINT IF EXISTS workout_sets_session_id_exercise_index_set_number_key,
+           ADD CONSTRAINT workout_sets_workout_session_id_exercise_id_set_number_key
+             UNIQUE (workout_session_id, exercise_id, set_number),
+           DROP COLUMN exercise_index`,
+      );
+    }
+
+    // ---- workout_set_drafts: same move, same reasoning. ---------------------
+    if (
+      await this.columnExists(client, 'workout_set_drafts', 'exercise_index')
+    ) {
+      await client.query(
+        'ALTER TABLE workout_set_drafts ADD COLUMN IF NOT EXISTS exercise_id INTEGER',
+      );
+      await client.query(
+        `UPDATE workout_set_drafts d
+            SET exercise_id = e.id
+           FROM workout_session_exercises e
+          WHERE e.session_id = d.session_id
+            AND e.position = d.exercise_index
+            AND d.exercise_id IS NULL`,
+      );
+      // A draft is throwaway keypad input, not history: one we cannot attribute
+      // is dropped rather than blocking the migration.
+      await client.query(
+        'DELETE FROM workout_set_drafts WHERE exercise_id IS NULL',
+      );
+      await client.query(
+        `ALTER TABLE workout_set_drafts
+           ALTER COLUMN exercise_id SET NOT NULL,
+           ADD CONSTRAINT workout_set_drafts_exercise_id_fkey
+             FOREIGN KEY (exercise_id) REFERENCES workout_session_exercises(id) ON DELETE CASCADE,
+           DROP CONSTRAINT IF EXISTS workout_set_drafts_pkey,
+           ADD PRIMARY KEY (session_id, exercise_id, set_number),
+           DROP COLUMN exercise_index`,
+      );
+    }
+
+    // ---- workout_events: a position is what it recorded; keep it as one. ----
+    if (await this.columnExists(client, 'workout_events', 'exercise_index')) {
+      await client.query(
+        'ALTER TABLE workout_events RENAME COLUMN exercise_index TO exercise_position',
+      );
+    }
+    await client.query(
+      `ALTER TABLE workout_events
+         ADD COLUMN IF NOT EXISTS exercise_id INTEGER
+           REFERENCES workout_session_exercises(id) ON DELETE SET NULL`,
     );
   }
 
@@ -283,13 +562,15 @@ export class WorkoutService implements OnModuleInit {
     client: PoolClient,
     sessionId: number,
     kind: WorkoutEventKind,
-    exerciseIndex: number | null,
+    exercisePosition: number | null,
+    exerciseId: number | null,
     setNumber: number | null,
   ): Promise<void> {
     await client.query(
-      `INSERT INTO workout_events (session_id, kind, exercise_index, set_number)
-       VALUES ($1, $2, $3, $4)`,
-      [sessionId, kind, exerciseIndex, setNumber],
+      `INSERT INTO workout_events
+         (session_id, kind, exercise_position, exercise_id, set_number)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [sessionId, kind, exercisePosition, exerciseId, setNumber],
     );
   }
 
@@ -312,6 +593,30 @@ export class WorkoutService implements OnModuleInit {
       throw new NotFoundException('No workout in progress.');
     }
     return session;
+  }
+
+  /**
+   * The identity of the exercise sitting at a queue position. This is the only
+   * place a position is turned into an exercise, and it happens once per action
+   * inside the transaction that holds the session lock — so the queue cannot be
+   * reordered between resolving the exercise and writing against it.
+   */
+  private async exerciseIdAt(
+    run: Run,
+    sessionId: number,
+    position: number,
+  ): Promise<number> {
+    const result = await run<{ id: number }>(
+      'SELECT id FROM workout_session_exercises WHERE session_id = $1 AND position = $2',
+      [sessionId, position],
+    );
+    const id = result.rows[0]?.id;
+    if (id === undefined) {
+      throw new Error(
+        `Workout ${sessionId} has no exercise at position ${position}.`,
+      );
+    }
+    return id;
   }
 
   /** The user's unfinished workout, or null. */
@@ -353,7 +658,8 @@ export class WorkoutService implements OnModuleInit {
     }
 
     // Flattened in the order the exercises are performed: groups top to bottom,
-    // exercises within a group likewise. This ordering is what "3 / 8" counts.
+    // exercises within a group likewise. This ordering seeds the queue's initial
+    // positions; from here on the queue owns its own order.
     const exercisesResult = await this.db.query<{ id: number; name: string }>(
       `SELECT id, name
          FROM exercises
@@ -384,16 +690,39 @@ export class WorkoutService implements OnModuleInit {
           throw new Error('Could not create the workout session.');
         }
 
+        let firstExerciseId: number | undefined;
         for (const [position, exercise] of exercises.entries()) {
-          await client.query(
-            `INSERT INTO workout_session_exercises (session_id, position, exercise_id, name)
-             VALUES ($1, $2, $3, $4)`,
+          const row = await client.query<{ id: number }>(
+            `INSERT INTO workout_session_exercises
+               (session_id, position, catalog_exercise_id, name)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id`,
             [id, position, exercise.id, exercise.name],
           );
+          if (position === 0) {
+            firstExerciseId = row.rows[0]?.id;
+          }
+        }
+        if (firstExerciseId === undefined) {
+          throw new Error('Could not seed the workout exercise queue.');
         }
 
-        await this.recordEvent(client, id, 'workout_started', 0, 1);
-        await this.recordEvent(client, id, 'exercise_started', 0, 1);
+        await this.recordEvent(
+          client,
+          id,
+          'workout_started',
+          0,
+          firstExerciseId,
+          1,
+        );
+        await this.recordEvent(
+          client,
+          id,
+          'exercise_started',
+          0,
+          firstExerciseId,
+          1,
+        );
         return id;
       })
       .catch((err: unknown) => {
@@ -423,20 +752,19 @@ export class WorkoutService implements OnModuleInit {
   ): Promise<WorkoutState> {
     return this.db.transaction(async (client) => {
       const session = await this.lockActiveSession(client, userId);
+      const exerciseId = await this.exerciseIdAt(
+        this.runner(client),
+        session.id,
+        session.exercise_position,
+      );
       await client.query(
-        `INSERT INTO workout_set_drafts (session_id, exercise_index, set_number, weight, reps)
+        `INSERT INTO workout_set_drafts (session_id, exercise_id, set_number, weight, reps)
          VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (session_id, exercise_index, set_number) DO UPDATE
+         ON CONFLICT (session_id, exercise_id, set_number) DO UPDATE
            SET weight = EXCLUDED.weight,
                reps = EXCLUDED.reps,
                updated_at = now()`,
-        [
-          session.id,
-          session.exercise_index,
-          session.set_number,
-          draft.weight,
-          draft.reps,
-        ],
+        [session.id, exerciseId, session.set_number, draft.weight, draft.reps],
       );
       return this.buildState(session, client);
     });
@@ -454,6 +782,7 @@ export class WorkoutService implements OnModuleInit {
   ): Promise<WorkoutState> {
     return this.db.transaction(async (client) => {
       const session = await this.lockActiveSession(client, userId);
+      const run = this.runner(client);
 
       // Fail safe: a set can only be finished from the set phase. Arriving here
       // while resting means the client is out of step with the database.
@@ -464,41 +793,61 @@ export class WorkoutService implements OnModuleInit {
       }
 
       const exerciseCount = await this.countExercises(client, session.id);
+      const exerciseId = await this.exerciseIdAt(
+        run,
+        session.id,
+        session.exercise_position,
+      );
+      const exerciseName = await this.exerciseName(run, exerciseId);
 
-      // Idempotent on the cursor: a retried tap overwrites the same row rather
-      // than logging the set twice.
+      // Read before the insert: the prefill is what the workout asked of the
+      // user, and after the row lands the set itself would be its own answer.
+      const { plannedWeight } = await this.resolvePrefill(
+        session,
+        exerciseId,
+        exerciseName,
+        run,
+      );
+
+      // Idempotent on (session, exercise, set): a retried tap overwrites the same
+      // row rather than logging the set twice. Only the actuals are overwritten —
+      // started_at and planned_* describe the attempt and are set once.
       await client.query(
         `INSERT INTO workout_sets
-           (session_id, exercise_index, set_number, target_reps, reps, weight)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (session_id, exercise_index, set_number) DO UPDATE
-           SET reps = EXCLUDED.reps,
-               weight = EXCLUDED.weight,
+           (workout_session_id, exercise_id, set_number, planned_reps, actual_reps,
+            planned_weight, actual_weight, started_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::timestamptz, now()))
+         ON CONFLICT (workout_session_id, exercise_id, set_number) DO UPDATE
+           SET actual_reps = EXCLUDED.actual_reps,
+               actual_weight = EXCLUDED.actual_weight,
                completed_at = now()`,
         [
           session.id,
-          session.exercise_index,
+          exerciseId,
           session.set_number,
           session.planned_reps,
           reps,
+          plannedWeight,
           weight,
+          session.set_started_at,
         ],
       );
       await client.query(
         `DELETE FROM workout_set_drafts
-          WHERE session_id = $1 AND exercise_index = $2 AND set_number = $3`,
-        [session.id, session.exercise_index, session.set_number],
+          WHERE session_id = $1 AND exercise_id = $2 AND set_number = $3`,
+        [session.id, exerciseId, session.set_number],
       );
       await this.recordEvent(
         client,
         session.id,
         'set_completed',
-        session.exercise_index,
+        session.exercise_position,
+        exerciseId,
         session.set_number,
       );
 
       const isFinalSet = session.set_number >= session.sets_per_exercise;
-      const isFinalExercise = session.exercise_index >= exerciseCount - 1;
+      const isFinalExercise = session.exercise_position >= exerciseCount - 1;
 
       if (isFinalSet && isFinalExercise) {
         const updated = await client.query<SessionRow>(
@@ -512,7 +861,8 @@ export class WorkoutService implements OnModuleInit {
           client,
           session.id,
           'workout_completed',
-          session.exercise_index,
+          session.exercise_position,
+          exerciseId,
           session.set_number,
         );
         return this.buildState(
@@ -532,7 +882,8 @@ export class WorkoutService implements OnModuleInit {
         client,
         session.id,
         'rest_started',
-        session.exercise_index,
+        session.exercise_position,
+        exerciseId,
         session.set_number,
       );
       return this.buildState(
@@ -557,42 +908,64 @@ export class WorkoutService implements OnModuleInit {
         return this.buildState(session, client);
       }
 
+      const exerciseId = await this.exerciseIdAt(
+        this.runner(client),
+        session.id,
+        session.exercise_position,
+      );
+
+      // Close out the set the user just rested after. The rest is over now, so
+      // its duration is a fact — record it against the set it followed.
+      await client.query(
+        `UPDATE workout_sets
+            SET rest_duration = CAST(
+                  GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - $4::timestamptz)))) AS INTEGER)
+          WHERE workout_session_id = $1 AND exercise_id = $2 AND set_number = $3`,
+        [session.id, exerciseId, session.set_number, session.resting_since],
+      );
+
       await this.recordEvent(
         client,
         session.id,
         'rest_finished',
-        session.exercise_index,
+        session.exercise_position,
+        exerciseId,
         session.set_number,
       );
 
       const movesToNextExercise =
         session.set_number >= session.sets_per_exercise;
-      const nextExerciseIndex = movesToNextExercise
-        ? session.exercise_index + 1
-        : session.exercise_index;
+      const nextPosition = movesToNextExercise
+        ? session.exercise_position + 1
+        : session.exercise_position;
       const nextSetNumber = movesToNextExercise ? 1 : session.set_number + 1;
 
       // The final set of the final exercise completes the workout in finishSet,
       // so the cursor can never be advanced past the last exercise here. Guard
       // anyway rather than trust that invariant from a mutating endpoint.
       const exerciseCount = await this.countExercises(client, session.id);
-      if (nextExerciseIndex >= exerciseCount) {
+      if (nextPosition >= exerciseCount) {
         throw new BadRequestException('The workout has no further exercises.');
       }
 
       const updated = await client.query<SessionRow>(
         `UPDATE workout_sessions
-            SET resting_since = NULL, exercise_index = $2, set_number = $3
+            SET resting_since = NULL, exercise_position = $2, set_number = $3,
+                set_started_at = now()
           WHERE id = $1
         RETURNING *, now() AS server_now`,
-        [session.id, nextExerciseIndex, nextSetNumber],
+        [session.id, nextPosition, nextSetNumber],
       );
 
+      const nextExerciseId = movesToNextExercise
+        ? await this.exerciseIdAt(this.runner(client), session.id, nextPosition)
+        : exerciseId;
       await this.recordEvent(
         client,
         session.id,
         movesToNextExercise ? 'exercise_started' : 'next_set_started',
-        nextExerciseIndex,
+        nextPosition,
+        nextExerciseId,
         nextSetNumber,
       );
 
@@ -609,17 +982,15 @@ export class WorkoutService implements OnModuleInit {
    * becomes current and nothing is skipped: the deferred exercise comes round
    * again, and the workout cannot complete until it has been done.
    *
-   * Only exercises with nothing logged against them may move. A completed set
-   * records its `workout_sets.exercise_index` — a *position*, not an exercise id
-   * — so moving a position that has sets under it would silently reattribute
-   * them to a different lift. The cursor sits at the first unfinished exercise
-   * and everything ahead of it is untouched by definition, so shifting the
-   * cursor's tail is the one rewrite that cannot corrupt history. Refuse the
-   * rest.
+   * Only exercises with nothing logged against them may move. That is a product
+   * rule — you finish what you started — and no longer a constraint on the data:
+   * sets name their exercise by identity, so reordering the queue cannot
+   * reattribute them however many times it happens.
    */
   async deferExercise(userId: number): Promise<WorkoutState> {
     return this.db.transaction(async (client) => {
       const session = await this.lockActiveSession(client, userId);
+      const run = this.runner(client);
 
       if (session.resting_since !== null) {
         throw new BadRequestException(
@@ -627,7 +998,7 @@ export class WorkoutService implements OnModuleInit {
         );
       }
 
-      const cursor = session.exercise_index;
+      const cursor = session.exercise_position;
       const exerciseCount = await this.countExercises(client, session.id);
 
       // Nothing to do first: deferring the last exercise would just re-present
@@ -638,9 +1009,15 @@ export class WorkoutService implements OnModuleInit {
         );
       }
 
+      const deferredExerciseId = await this.exerciseIdAt(
+        run,
+        session.id,
+        cursor,
+      );
+
       const logged = await client.query(
-        'SELECT 1 FROM workout_sets WHERE session_id = $1 AND exercise_index = $2 LIMIT 1',
-        [session.id, cursor],
+        'SELECT 1 FROM workout_sets WHERE workout_session_id = $1 AND exercise_id = $2 LIMIT 1',
+        [session.id, deferredExerciseId],
       );
       if (logged.rowCount) {
         throw new BadRequestException(
@@ -658,13 +1035,13 @@ export class WorkoutService implements OnModuleInit {
       }
       tail.push(cursor);
 
-      // Renumbered in two passes, because (session_id, position) is a primary
-      // key: a single `SET position = position - 1` can collide with a row it
-      // has not renumbered yet. Postgres checks the key per row, not at the end
-      // of the statement, and the order it visits rows in is not ours to
-      // choose — it happens to work on an ascending scan, which is exactly the
-      // kind of luck not to build on. Park the tail on negatives (always free,
-      // positions are non-negative), then land it on the final positions.
+      // Renumbered in two passes, because (session_id, position) is unique: a
+      // single `SET position = position - 1` can collide with a row it has not
+      // renumbered yet. Postgres checks the key per row, not at the end of the
+      // statement, and the order it visits rows in is not ours to choose — it
+      // happens to work on an ascending scan, which is exactly the kind of luck
+      // not to build on. Park the tail on negatives (always free, positions are
+      // non-negative), then land it on the final positions.
       await client.query(
         `UPDATE workout_session_exercises
             SET position = -position - 1
@@ -683,35 +1060,42 @@ export class WorkoutService implements OnModuleInit {
       await client.query(
         `UPDATE workout_session_exercises
             SET deferred_at = now()
-          WHERE session_id = $1 AND position = $2`,
-        [session.id, lastPosition],
+          WHERE id = $1`,
+        [deferredExerciseId],
       );
 
-      // Drafts are keyed by position, not by exercise. Any draft at or after the
-      // cursor now names a different lift, so it is no longer the user's input.
-      await client.query(
-        'DELETE FROM workout_set_drafts WHERE session_id = $1 AND exercise_index >= $2',
-        [session.id, cursor],
+      // The cursor has not moved, but the exercise under it has, so the user is
+      // starting a different lift now.
+      const updated = await client.query<SessionRow>(
+        `UPDATE workout_sessions
+            SET set_started_at = now()
+          WHERE id = $1
+        RETURNING *, now() AS server_now`,
+        [session.id],
       );
 
       await this.recordEvent(
         client,
         session.id,
         'exercise_deferred',
-        cursor,
+        lastPosition,
+        deferredExerciseId,
         session.set_number,
       );
-      // The cursor has not moved, but the exercise under it has: what is now at
-      // `cursor` is the exercise the user is about to start.
+      const nextExerciseId = await this.exerciseIdAt(run, session.id, cursor);
       await this.recordEvent(
         client,
         session.id,
         'exercise_started',
         cursor,
+        nextExerciseId,
         session.set_number,
       );
 
-      return this.buildState(session, client);
+      return this.buildState(
+        this.mergeSession(session, updated.rows[0]),
+        client,
+      );
     });
   }
 
@@ -722,6 +1106,11 @@ export class WorkoutService implements OnModuleInit {
   async abandonWorkout(userId: number): Promise<void> {
     await this.db.transaction(async (client) => {
       const session = await this.lockActiveSession(client, userId);
+      const exerciseId = await this.exerciseIdAt(
+        this.runner(client),
+        session.id,
+        session.exercise_position,
+      );
       await client.query(
         'UPDATE workout_sessions SET abandoned_at = now(), resting_since = NULL WHERE id = $1',
         [session.id],
@@ -730,7 +1119,8 @@ export class WorkoutService implements OnModuleInit {
         client,
         session.id,
         'workout_abandoned',
-        session.exercise_index,
+        session.exercise_position,
+        exerciseId,
         session.set_number,
       );
     });
@@ -745,6 +1135,24 @@ export class WorkoutService implements OnModuleInit {
       [sessionId],
     );
     return Number(result.rows[0]?.count ?? 0);
+  }
+
+  /** The snapshotted name of an exercise identity. */
+  private async exerciseName(run: Run, exerciseId: number): Promise<string> {
+    const result = await run<{ name: string }>(
+      'SELECT name FROM workout_session_exercises WHERE id = $1',
+      [exerciseId],
+    );
+    return result.rows[0]?.name ?? '';
+  }
+
+  /** Queries on the transaction's client, so reads see its uncommitted writes. */
+  private runner(client?: PoolClient): Run {
+    return <T extends Record<string, unknown>>(
+      text: string,
+      params: unknown[],
+    ) =>
+      client ? client.query<T>(text, params) : this.db.query<T>(text, params);
   }
 
   /**
@@ -784,18 +1192,15 @@ export class WorkoutService implements OnModuleInit {
     session: SessionRow,
     client?: PoolClient,
   ): Promise<WorkoutState> {
-    const run = <T extends Record<string, unknown>>(
-      text: string,
-      params: unknown[],
-    ) =>
-      client ? client.query<T>(text, params) : this.db.query<T>(text, params);
+    const run = this.runner(client);
 
     const exercisesResult = await run<{
+      id: number;
       position: number;
       name: string;
       deferred_at: Date | null;
     }>(
-      `SELECT position, name, deferred_at
+      `SELECT id, position, name, deferred_at
          FROM workout_session_exercises
         WHERE session_id = $1
         ORDER BY position`,
@@ -807,17 +1212,24 @@ export class WorkoutService implements OnModuleInit {
       deferred: row.deferred_at !== null,
     }));
 
+    // Rows come back ordered by position, so the cursor indexes them directly.
+    const currentExercise = exercisesResult.rows[session.exercise_position];
+    const currentExerciseId = currentExercise?.id ?? null;
+    const exerciseName = currentExercise?.name ?? '';
+
+    // Counted by exercise identity, so a reordered queue never changes what a
+    // finished workout reports.
     const totalsResult = await run<{
       sets_completed: string;
       exercises_completed: string;
       current_exercise_sets: string;
     }>(
       `SELECT count(*) AS sets_completed,
-              count(DISTINCT exercise_index) AS exercises_completed,
-              count(*) FILTER (WHERE exercise_index = $2) AS current_exercise_sets
+              count(DISTINCT exercise_id) AS exercises_completed,
+              count(*) FILTER (WHERE exercise_id = $2) AS current_exercise_sets
          FROM workout_sets
-        WHERE session_id = $1`,
-      [session.id, session.exercise_index],
+        WHERE workout_session_id = $1`,
+      [session.id, currentExerciseId],
     );
     const setsCompleted = Number(totalsResult.rows[0]?.sets_completed ?? 0);
     const exercisesCompleted = Number(
@@ -854,14 +1266,12 @@ export class WorkoutService implements OnModuleInit {
         ? 'rest'
         : 'set';
 
-    const exerciseName = exercises[session.exercise_index]?.name ?? '';
-
     // Mirrors the guards in `deferExercise`. The button is hidden when this is
     // false; the endpoint refuses anyway, since the client is untrusted.
     const canDefer =
       phase === 'set' &&
       currentExerciseSets === 0 &&
-      session.exercise_index < exercises.length - 1;
+      session.exercise_position < exercises.length - 1;
 
     // Only the ones still waiting: once the cursor reaches a deferred exercise
     // it is no longer pending, it is the exercise being done.
@@ -869,12 +1279,18 @@ export class WorkoutService implements OnModuleInit {
       ? 0
       : exercises.filter(
           (exercise) =>
-            exercise.deferred && exercise.position > session.exercise_index,
+            exercise.deferred && exercise.position > session.exercise_position,
         ).length;
 
-    const { plannedWeight, draftReps } = completed
-      ? { plannedWeight: null, draftReps: null }
-      : await this.resolvePrefill(session, exerciseName, run);
+    const { plannedWeight, draftReps } =
+      completed || currentExerciseId === null
+        ? { plannedWeight: null, draftReps: null }
+        : await this.resolvePrefill(
+            session,
+            currentExerciseId,
+            exerciseName,
+            run,
+          );
 
     return {
       id: session.id,
@@ -886,7 +1302,7 @@ export class WorkoutService implements OnModuleInit {
       completedAt: session.completed_at?.toISOString() ?? null,
       elapsedSeconds,
       exercises,
-      exerciseIndex: session.exercise_index,
+      exerciseIndex: session.exercise_position,
       exerciseCount: exercises.length,
       exerciseName,
       canDefer,
@@ -910,11 +1326,9 @@ export class WorkoutService implements OnModuleInit {
    */
   private async resolvePrefill(
     session: SessionRow,
+    exerciseId: number,
     exerciseName: string,
-    run: <T extends Record<string, unknown>>(
-      text: string,
-      params: unknown[],
-    ) => Promise<{ rows: T[] }>,
+    run: Run,
   ): Promise<{ plannedWeight: number | null; draftReps: number | null }> {
     const draftResult = await run<{
       weight: number | null;
@@ -922,23 +1336,24 @@ export class WorkoutService implements OnModuleInit {
     }>(
       `SELECT weight::float8 AS weight, reps
          FROM workout_set_drafts
-        WHERE session_id = $1 AND exercise_index = $2 AND set_number = $3`,
-      [session.id, session.exercise_index, session.set_number],
+        WHERE session_id = $1 AND exercise_id = $2 AND set_number = $3`,
+      [session.id, exerciseId, session.set_number],
     );
     const draft = draftResult.rows[0];
     if (draft?.weight !== null && draft?.weight !== undefined) {
       return { plannedWeight: draft.weight, draftReps: draft.reps ?? null };
     }
 
-    // No draft weight — reuse the last weight lifted on this exercise. Matched
-    // by name, so a renamed exercise simply starts fresh rather than inheriting
-    // a stranger's numbers.
+    // No draft weight — reuse the last weight lifted on this exercise. Joined
+    // through the set's exercise identity, so a queue reordered by a defer (in
+    // this workout or an earlier one) can never surface another lift's numbers.
+    // Matched by name across workouts, so a renamed exercise simply starts fresh
+    // rather than inheriting a stranger's numbers.
     const lastResult = await run<{ weight: number }>(
-      `SELECT ws.weight::float8 AS weight
+      `SELECT ws.actual_weight::float8 AS weight
          FROM workout_sets ws
-         JOIN workout_sessions s ON s.id = ws.session_id
-         JOIN workout_session_exercises e
-           ON e.session_id = ws.session_id AND e.position = ws.exercise_index
+         JOIN workout_sessions s ON s.id = ws.workout_session_id
+         JOIN workout_session_exercises e ON e.id = ws.exercise_id
         WHERE s.user_id = $1 AND e.name = $2
         ORDER BY ws.completed_at DESC
         LIMIT 1`,

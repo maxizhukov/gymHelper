@@ -57,6 +57,15 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+The workout schema and its migration are covered by tests that need a real
+Postgres — they exercise `FOR UPDATE`, partial unique indexes and `ON CONFLICT`,
+so a fake would prove nothing. Point `TEST_DATABASE_URL` at a throwaway server
+(the user must be able to create databases) to run them; without it they skip.
+
+```bash
+$ TEST_DATABASE_URL=postgres://postgres@localhost:5432/postgres npm run test
+```
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
