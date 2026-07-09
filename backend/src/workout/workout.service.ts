@@ -103,9 +103,9 @@ export interface WorkoutState {
   exerciseName: string;
 
   /**
-   * Whether the current exercise may be pushed to the back of the queue: it has
-   * to be untouched (no sets logged), not resting, and not already last — there
-   * is nothing to do first if it is. The client uses this to show the button;
+   * Whether the current exercise may be pushed back a place: it has to be
+   * untouched (no sets logged), not resting, and not already last — there is
+   * nothing to do first if it is. The client uses this to show the button;
    * `deferExercise` re-checks it, because the client is untrusted.
    */
   canDefer: boolean;
@@ -977,10 +977,24 @@ export class WorkoutService implements OnModuleInit {
   }
 
   /**
-   * Pushes the current exercise to the back of the queue — the machine was busy.
-   * Everything behind it shifts forward one place, so the exercise that was next
-   * becomes current and nothing is skipped: the deferred exercise comes round
-   * again, and the workout cannot complete until it has been done.
+   * Pushes the current exercise behind exactly one exercise — the machine was
+   * busy, not abandoned. The exercise that takes its place becomes current, and
+   * the deferred one comes back round as soon as that exercise is finished.
+   *
+   * "Exactly one" means one *available* exercise, not one queue slot. Exercises
+   * already deferred are still unavailable, so a defer hops the whole run of
+   * them and lands behind the first exercise that has not been pushed back:
+   *
+   *     Bench✓ | [Chest] Incline  Pec      defer Chest -> behind Incline
+   *     Bench✓ | [Incline] Chest  Pec      defer Incline -> behind Pec, not Chest
+   *     Bench✓ | [Pec] Incline  Chest
+   *
+   * Rotating rather than swapping is what keeps that stable: the run of deferred
+   * exercises stays in the order it was deferred in, and each one is only ever
+   * one available exercise away from coming up again. When every exercise ahead
+   * is deferred there is nothing available to hop, so the cursor's exercise
+   * simply trades places with the one behind it — the user moves on, and the
+   * machine it was waiting on gets another turn.
    *
    * Only exercises with nothing logged against them may move. That is a product
    * rule — you finish what you started — and no longer a constraint on the data:
@@ -1025,30 +1039,45 @@ export class WorkoutService implements OnModuleInit {
         );
       }
 
-      const lastPosition = exerciseCount - 1;
+      // The exercise to hop: the first one ahead of the cursor that is not
+      // itself deferred. Non-empty by the guard above, so `upcoming[0]` is the
+      // fallback when everything ahead has already been pushed back.
+      const upcoming = await client.query<{
+        position: number;
+        deferred: boolean;
+      }>(
+        `SELECT position, deferred_at IS NOT NULL AS deferred
+           FROM workout_session_exercises
+          WHERE session_id = $1 AND position > $2
+          ORDER BY position`,
+        [session.id, cursor],
+      );
+      const target =
+        upcoming.rows.find((row) => !row.deferred) ?? upcoming.rows[0];
+      const targetPosition = target.position;
 
-      // The order the tail should end up in: everything after the cursor moves
-      // up one, and the deferred exercise trails them.
-      const tail: number[] = [];
-      for (let position = cursor + 1; position <= lastPosition; position++) {
-        tail.push(position);
+      // Rotate `cursor..targetPosition` right by one: the target jumps to the
+      // cursor, and the deferred exercise — followed by any exercises deferred
+      // before it — slides one place back.
+      const rotated = [targetPosition];
+      for (let position = cursor; position < targetPosition; position++) {
+        rotated.push(position);
       }
-      tail.push(cursor);
 
       // Renumbered in two passes, because (session_id, position) is unique: a
       // single `SET position = position - 1` can collide with a row it has not
       // renumbered yet. Postgres checks the key per row, not at the end of the
       // statement, and the order it visits rows in is not ours to choose — it
       // happens to work on an ascending scan, which is exactly the kind of luck
-      // not to build on. Park the tail on negatives (always free, positions are
-      // non-negative), then land it on the final positions.
+      // not to build on. Park the rotating block on negatives (always free,
+      // positions are non-negative), then land it on the final positions.
       await client.query(
         `UPDATE workout_session_exercises
             SET position = -position - 1
-          WHERE session_id = $1 AND position >= $2`,
-        [session.id, cursor],
+          WHERE session_id = $1 AND position BETWEEN $2 AND $3`,
+        [session.id, cursor, targetPosition],
       );
-      for (const [offset, from] of tail.entries()) {
+      for (const [offset, from] of rotated.entries()) {
         await client.query(
           `UPDATE workout_session_exercises
               SET position = $3
@@ -1078,7 +1107,7 @@ export class WorkoutService implements OnModuleInit {
         client,
         session.id,
         'exercise_deferred',
-        lastPosition,
+        cursor + 1,
         deferredExerciseId,
         session.set_number,
       );

@@ -111,8 +111,8 @@ export class WorkoutController {
   }
 
   /**
-   * Pushes the current exercise to the back of the queue — its machine is busy —
-   * and opens the one that was next. The exercise is deferred, never skipped.
+   * Pushes the current exercise behind one available exercise — its machine is
+   * busy — and opens the one that takes its place. Deferred, never skipped.
    * Takes no body: the exercise to defer is the one the session's cursor names.
    */
   @Post('defer')

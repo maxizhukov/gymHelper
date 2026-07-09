@@ -160,9 +160,9 @@ function ActiveWorkout({
   }
 
   /**
-   * Sends this exercise to the back of the queue and opens the next one. One
-   * tap, no confirmation: the machine is busy and the user is standing in front
-   * of it. Nothing is lost — the server keeps the exercise in the workout.
+   * Sends this exercise one place back and opens the one that takes its place.
+   * One tap, no confirmation: the machine is busy and the user is standing in
+   * front of it. Nothing is lost — the exercise comes back straight after.
    */
   async function handleDefer() {
     // A draft written after the swap would be filed against the exercise that

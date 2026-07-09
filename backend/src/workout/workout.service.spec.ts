@@ -149,6 +149,13 @@ describeDb('WorkoutService — exercise identity outlives queue position', () =>
   let lifter = 0;
 
   const QUEUE = ['Bench Press', 'Chest Press Machine', 'Incline Press'];
+  /** The queue the defer rules are specified against. */
+  const SPEC_QUEUE = [
+    'Bench Press',
+    'Chest Press Machine',
+    'Incline Press',
+    'Pec Deck',
+  ];
 
   beforeAll(async () => {
     await createDatabase('gymhelper_test_identity');
@@ -156,6 +163,7 @@ describeDb('WorkoutService — exercise identity outlives queue position', () =>
     await createDependencies(db);
     await createDay(db, 'chest', QUEUE);
     await createDay(db, 'four', [...QUEUE, 'Cable Fly']);
+    await createDay(db, 'spec', SPEC_QUEUE);
 
     const trainingConfig = new TrainingConfigService(db);
     await trainingConfig.onModuleInit();
@@ -249,15 +257,126 @@ describeDb('WorkoutService — exercise identity outlives queue position', () =>
     expect(first.exerciseName).toBe('Chest Press Machine');
     expect(first.deferredCount).toBe(1);
 
+    // Chest Press Machine hops Incline Press — the first exercise ahead that is
+    // not itself deferred — rather than swapping with the deferred Bench Press.
     const second = await service.deferExercise(userId);
     expect(names(second)).toEqual([
       'Incline Press',
-      'Cable Fly',
-      'Bench Press',
       'Chest Press Machine',
+      'Bench Press',
+      'Cable Fly',
     ]);
     expect(second.exerciseName).toBe('Incline Press');
     expect(second.deferredCount).toBe(2);
+  });
+
+  it('brings a deferred exercise back after exactly one exercise', async () => {
+    const started = await service.startWorkout(userId, 'spec');
+    expect(names(started)).toEqual(SPEC_QUEUE);
+
+    await completeCurrentExercise(60); // Bench Press
+
+    // Chest Press Machine is busy: it goes behind Incline Press only.
+    const deferred = await service.deferExercise(userId);
+    expect(names(deferred)).toEqual([
+      'Bench Press',
+      'Incline Press',
+      'Chest Press Machine',
+      'Pec Deck',
+    ]);
+    expect(deferred.exerciseName).toBe('Incline Press');
+
+    // The whole point: after Incline Press comes Chest Press Machine, not Pec
+    // Deck. A deferred exercise waits one exercise, not the rest of the workout.
+    await completeCurrentExercise(40);
+    const back = await service.getActiveWorkout(userId);
+    expect(back?.exerciseName).toBe('Chest Press Machine');
+    expect(back?.deferredCount).toBe(0);
+
+    // Nothing was skipped and nothing was reattributed.
+    await expect(setsByExerciseName(db, started.id)).resolves.toEqual({
+      'Bench Press': SETS_PER_EXERCISE,
+      'Incline Press': SETS_PER_EXERCISE,
+    });
+  });
+
+  it('rotates each unavailable exercise past one available one', async () => {
+    await service.startWorkout(userId, 'spec');
+    await completeCurrentExercise(60); // Bench Press
+
+    await service.deferExercise(userId); // Chest Press Machine is busy
+    // Incline Press is busy too. It must land behind Pec Deck — the next
+    // available exercise — and stay ahead of the already-deferred machine.
+    const twice = await service.deferExercise(userId);
+    expect(names(twice)).toEqual([
+      'Bench Press',
+      'Pec Deck',
+      'Incline Press',
+      'Chest Press Machine',
+    ]);
+    expect(twice.exerciseName).toBe('Pec Deck');
+    expect(twice.deferredCount).toBe(2);
+
+    // And the queue drains in exactly that order.
+    await completeCurrentExercise(30); // Pec Deck
+    expect((await service.getActiveWorkout(userId))?.exerciseName).toBe(
+      'Incline Press',
+    );
+    await completeCurrentExercise(40); // Incline Press
+    expect((await service.getActiveWorkout(userId))?.exerciseName).toBe(
+      'Chest Press Machine',
+    );
+  });
+
+  it('trades places when every exercise ahead is already deferred', async () => {
+    await service.startWorkout(userId, 'chest');
+    await completeCurrentExercise(60); // Bench Press
+
+    // Two left, both pushed back: there is no available exercise to hop, so the
+    // pair simply cycles and the user keeps moving.
+    await service.deferExercise(userId);
+    const second = await service.deferExercise(userId);
+    expect(names(second)).toEqual([
+      'Bench Press',
+      'Chest Press Machine',
+      'Incline Press',
+    ]);
+    expect(second.exerciseName).toBe('Chest Press Machine');
+  });
+
+  it('restores the reordered queue after the app restarts', async () => {
+    const started = await service.startWorkout(userId, 'spec');
+    await completeCurrentExercise(60); // Bench Press
+    await service.deferExercise(userId); // Chest Press Machine is busy
+    await service.deferExercise(userId); // so is Incline Press
+    await service.finishSet(userId, 30, 10); // one set of Pec Deck
+
+    // A restart is a new pool, a new service, and nothing carried over in
+    // memory: the queue has to come back off the database exactly as it was.
+    const restartedDb = connect('gymhelper_test_identity');
+    const restartedConfig = new TrainingConfigService(restartedDb);
+    const restarted = new WorkoutService(restartedDb, restartedConfig);
+    await restarted.ensureSchema();
+    try {
+      const resumed = await restarted.getActiveWorkout(userId);
+      expect(resumed?.id).toBe(started.id);
+      expect(names(resumed!)).toEqual([
+        'Bench Press',
+        'Pec Deck',
+        'Incline Press',
+        'Chest Press Machine',
+      ]);
+      expect(resumed?.exerciseName).toBe('Pec Deck');
+      expect(resumed?.deferredCount).toBe(2);
+      expect(resumed?.setsCompleted).toBe(SETS_PER_EXERCISE + 1);
+
+      await expect(setsByExerciseName(db, started.id)).resolves.toEqual({
+        'Bench Press': SETS_PER_EXERCISE,
+        'Pec Deck': 1,
+      });
+    } finally {
+      await restartedDb.onModuleDestroy();
+    }
   });
 
   it('restores the reordered queue when a workout is resumed', async () => {

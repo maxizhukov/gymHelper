@@ -122,10 +122,10 @@ export function startNextSet(): Promise<AnchoredWorkout> {
 }
 
 /**
- * Pushes the current exercise to the back of the queue and opens the one that
- * was next — for when the machine you were about to use is occupied. Deferred,
- * not skipped: it comes round again, and the workout cannot finish without it.
- * The server refuses once the exercise has sets on it.
+ * Pushes the current exercise behind the next available one and opens that one
+ * instead — for when the machine you were about to use is occupied. Deferred,
+ * not skipped: it comes straight back once that exercise is done, and the
+ * workout cannot finish without it. The server refuses once it has sets on it.
  */
 export function deferExercise(): Promise<AnchoredWorkout> {
   return post('defer')
