@@ -8,5 +8,7 @@ import { SessionService } from './session.service';
   imports: [DatabaseModule],
   controllers: [AuthController],
   providers: [AuthService, SessionService],
+  // Other modules resolve the acting user from the session cookie via this.
+  exports: [SessionService],
 })
 export class AuthModule {}

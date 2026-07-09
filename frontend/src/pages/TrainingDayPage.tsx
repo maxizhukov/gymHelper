@@ -1,18 +1,43 @@
 import { Separator } from '@base-ui/react/separator'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
-import { findTrainingDay } from '../training-days'
+import { useTrainingDay } from '../training-days'
 
 export default function TrainingDayPage() {
   const { user } = useAuth()
   const { slug } = useParams<{ slug: string }>()
-  const trainingDay = findTrainingDay(slug)
+  const trainingDay = useTrainingDay(slug)
 
   if (!user) return null
   // An unknown day in the URL is not an error the user can act on — send them home.
-  if (!trainingDay) return <Navigate to="/" replace />
+  if (trainingDay.status === 'not-found') return <Navigate to="/" replace />
 
-  const { day, focus, exerciseGroups } = trainingDay
+  if (trainingDay.status === 'loading') {
+    return (
+      <main className="app">
+        {/* Navigation, so a real link — Base UI's Button would impose button semantics. */}
+        <Link className="back-link" to="/">
+          Back
+        </Link>
+        <p className="subtitle">Loading…</p>
+      </main>
+    )
+  }
+
+  if (trainingDay.status === 'error') {
+    return (
+      <main className="app">
+        <Link className="back-link" to="/">
+          Back
+        </Link>
+        <p className="error" role="alert">
+          {trainingDay.message}
+        </p>
+      </main>
+    )
+  }
+
+  const { day, focus, exerciseGroups } = trainingDay.data
 
   // Numbering runs across the whole workout, so each group starts where the
   // previous one ended rather than restarting at 1.
@@ -20,7 +45,6 @@ export default function TrainingDayPage() {
 
   return (
     <main className="app">
-      {/* Navigation, so a real link — Base UI's Button would impose button semantics. */}
       <Link className="back-link" to="/">
         Back
       </Link>
