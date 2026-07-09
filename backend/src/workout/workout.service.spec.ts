@@ -198,6 +198,52 @@ describeDb('WorkoutService — exercise identity outlives queue position', () =>
     }
   }
 
+  /**
+   * `canDefer` is the whole of the workout screen's rendering condition for the
+   * "Machine busy — do this later" button, so these two tests are what stands
+   * between a queue change and the button quietly disappearing from the UI.
+   */
+  it('offers the defer button on the first exercise of a new workout', async () => {
+    const started = await service.startWorkout(userId, 'chest');
+
+    // A new workout opens on exercise 1, before its first set.
+    expect(started.exerciseIndex).toBe(0);
+    expect(started.exerciseName).toBe('Bench Press');
+    expect(started.phase).toBe('set');
+    expect(started.setsCompleted).toBe(0);
+    expect(started.canDefer).toBe(true);
+
+    // And the button is still there when the screen reloads onto that workout,
+    // since the state it renders is read back from the database, not remembered.
+    const resumed = await service.getWorkout(userId, started.id);
+    expect(resumed?.exerciseIndex).toBe(0);
+    expect(resumed?.setsCompleted).toBe(0);
+    expect(resumed?.canDefer).toBe(true);
+  });
+
+  it('withdraws the defer button once the exercise is underway or last', async () => {
+    await service.startWorkout(userId, 'chest');
+
+    // Resting is not a moment to reorder the queue.
+    const resting = await service.finishSet(userId, 60, 10);
+    expect(resting.phase).toBe('rest');
+    expect(resting.canDefer).toBe(false);
+
+    // Back on the set screen — but a set is logged, so the exercise is started.
+    const secondSet = await service.startNextSet(userId);
+    expect(secondSet.phase).toBe('set');
+    expect(secondSet.setNumber).toBe(2);
+    expect(secondSet.canDefer).toBe(false);
+
+    // The last exercise has nothing that could be done before it.
+    await completeCurrentExercise(60); // Bench Press
+    await completeCurrentExercise(50); // Chest Press Machine
+    const last = await service.getActiveWorkout(userId);
+    expect(last?.exerciseName).toBe('Incline Press');
+    expect(last?.exerciseIndex).toBe(QUEUE.length - 1);
+    expect(last?.canDefer).toBe(false);
+  });
+
   it('keeps completed sets attached to their exercise across a defer', async () => {
     const started = await service.startWorkout(userId, 'chest');
     expect(names(started)).toEqual(QUEUE);
