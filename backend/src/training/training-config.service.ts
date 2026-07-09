@@ -17,7 +17,7 @@ export interface TrainingConfig {
  */
 const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   restPeriod: 90,
-  reps: 10,
+  reps: 12,
 };
 
 interface TrainingConfigRow {

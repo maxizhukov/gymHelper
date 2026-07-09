@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Pool, QueryResult, QueryResultRow } from 'pg';
+import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
@@ -32,6 +32,37 @@ export class DatabaseService implements OnModuleDestroy {
     params?: unknown[],
   ): Promise<QueryResult<T>> {
     return this.pool.query<T>(text, params);
+  }
+
+  /**
+   * Runs `fn` inside a transaction on a single pooled connection, committing on
+   * success and rolling back on any throw. Use this whenever one user action
+   * writes more than one row — a partial write would leave the database, which
+   * is the source of truth for an in-progress workout, describing a state the
+   * user was never in.
+   *
+   * The callback must issue its queries on the `client` it is handed; a query
+   * sent through `query()` above takes a different connection and would not be
+   * part of the transaction.
+   */
+  async transaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await fn(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      // A failed rollback must not mask the error that caused it.
+      await client.query('ROLLBACK').catch((rollbackErr: unknown) => {
+        const message =
+          rollbackErr instanceof Error ? rollbackErr.message : 'unknown error';
+        this.logger.error(`Rollback failed: ${message}`);
+      });
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async onModuleDestroy(): Promise<void> {

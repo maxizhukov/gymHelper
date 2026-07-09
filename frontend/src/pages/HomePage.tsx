@@ -1,15 +1,31 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { useTrainingDays } from '../training-days'
+import { useActiveWorkout } from '../workout'
 
 export default function HomePage() {
   const { user } = useAuth()
   const trainingDays = useTrainingDays()
+  const activeWorkout = useActiveWorkout()
   if (!user) return null
+
+  // An unfinished workout is the only thing worth doing on this screen, so it
+  // goes above everything else and one tap picks it back up.
+  const active = activeWorkout.status === 'ready' ? activeWorkout.data : null
 
   return (
     <main className="app">
       <h1>GymHelper</h1>
+
+      {active && (
+        <Link
+          className="workout-action workout-resume"
+          to={`/workout/${active.id}`}
+        >
+          Resume {active.dayName} workout
+        </Link>
+      )}
+
       <div className="card status-ok">
         <p className="label">Signed in as</p>
         <p className="message">{user.username}</p>

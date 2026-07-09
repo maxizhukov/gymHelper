@@ -12,6 +12,7 @@ import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
 import ProfilePage from './pages/ProfilePage'
 import TrainingDayPage from './pages/TrainingDayPage'
+import WorkoutPage from './pages/WorkoutPage'
 import './App.css'
 
 function Loading() {
@@ -62,6 +63,8 @@ function App() {
         <Route element={<RequireAuth />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/days/:slug" element={<TrainingDayPage />} />
+          {/* The id in the URL is what makes a reload mid-workout resume it. */}
+          <Route path="/workout/:id" element={<WorkoutPage />} />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>
 

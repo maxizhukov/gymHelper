@@ -10,5 +10,7 @@ import { TrainingService } from './training.service';
   imports: [DatabaseModule, AuthModule],
   controllers: [TrainingController, TrainingConfigController],
   providers: [TrainingService, TrainingConfigService],
+  // A workout snapshots the user's reps and rest period when it starts.
+  exports: [TrainingConfigService],
 })
 export class TrainingModule {}

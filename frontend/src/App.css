@@ -286,6 +286,238 @@
   cursor: pointer;
 }
 
+/* ── Workout ────────────────────────────────────────────────────────────────
+   Built for a phone held at arm's length between sets: one primary action,
+   sized so it can be hit without looking, and numbers big enough to read from
+   the rack. */
+
+/* The single big button on every workout screen. Also used as an <a> (Resume),
+   so it resets link styling and centres its own label. */
+.workout-action {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  /* Deliberately tall: this is tapped mid-set, with tired hands, unlooked at. */
+  min-height: 4rem;
+  padding: 1.25rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  border: none;
+  border-radius: 12px;
+  background: #2e7d32;
+  color: #fff;
+  cursor: pointer;
+}
+
+.workout-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.workout-resume {
+  margin-bottom: 1.5rem;
+}
+
+.workout-start {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0 0 2rem;
+}
+
+.workout-start-note {
+  margin: 0;
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.workout-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.workout-header .label {
+  margin: 0;
+  color: #888;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Tabular figures keep the clock from jittering as its digits change. */
+.workout-clock {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.workout-set,
+.workout-rest {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  text-align: left;
+}
+
+.workout-progress {
+  margin: 0;
+  color: #888;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.workout-exercise {
+  margin: 0;
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+.workout-stats {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.workout-stat {
+  flex: 1;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.workout-stat .label {
+  margin: 0 0 0.35rem;
+  color: #888;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.workout-stat-value {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.workout-weight {
+  margin: 0.5rem 0;
+}
+
+.workout-rest {
+  align-items: center;
+  text-align: center;
+}
+
+.workout-rest .label {
+  margin: 0;
+  color: #888;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* The countdown is the whole screen during rest — readable from the bench. */
+.rest-clock {
+  margin: 0;
+  font-size: 4.5rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.workout-next-up {
+  margin: 0 0 0.5rem;
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.workout-rest .workout-action,
+.workout-set .workout-action {
+  margin-top: 0.5rem;
+}
+
+/* Quiet, and far below the primary action: reachable, not hit by accident. */
+.workout-discard {
+  width: 100%;
+  margin-top: 3rem;
+  padding: 0.75rem;
+  font-size: 0.9rem;
+  border: none;
+  background: none;
+  color: #888;
+  cursor: pointer;
+}
+
+.workout-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 2rem 0;
+  text-align: left;
+}
+
+.workout-summary-item {
+  padding: 1rem 1.25rem;
+}
+
+.workout-summary-item dt {
+  margin: 0 0 0.35rem;
+}
+
+.workout-summary-item dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Finish-set dialog ──────────────────────────────────────────────────────
+   A bottom sheet on a phone: it opens under the thumb rather than in the
+   middle of the screen. */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.dialog-popup {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  box-sizing: border-box;
+  /* Clears the home indicator on a notched phone. */
+  padding: 1.5rem 1.25rem calc(1.5rem + env(safe-area-inset-bottom));
+  border: 1px solid #333;
+  border-radius: 16px 16px 0 0;
+  /* System colours, so the sheet follows the same light/dark scheme as :root. */
+  background: Canvas;
+  color: CanvasText;
+}
+
+.dialog-popup .settings-form {
+  margin: 0;
+}
+
+.dialog-popup button[type='submit'] {
+  min-height: 3.5rem;
+  font-size: 1.15rem;
+}
+
+.dialog-close {
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 0.9rem;
+  border: none;
+  background: none;
+  color: #888;
+  cursor: pointer;
+}
+
 code {
   background: rgba(128, 128, 128, 0.2);
   padding: 0.1em 0.3em;

@@ -7,6 +7,7 @@ import { DatabaseModule } from './database/database.module';
 import { DeployModule } from './deploy/deploy.module';
 import { HealthController } from './health.controller';
 import { TrainingModule } from './training/training.module';
+import { WorkoutModule } from './workout/workout.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { TrainingModule } from './training/training.module';
     AuthModule,
     DeployModule,
     TrainingModule,
+    WorkoutModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],
