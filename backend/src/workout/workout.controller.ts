@@ -16,6 +16,7 @@ import { readSessionToken } from '../auth/cookie.util';
 import { SessionService } from '../auth/session.service';
 import {
   validateFinishSetDto,
+  validateReorderDto,
   validateSaveDraftDto,
   validateStartWorkoutDto,
 } from './dto/workout.dto';
@@ -108,6 +109,20 @@ export class WorkoutController {
   async next(@Req() req: Request): Promise<{ workout: WorkoutState }> {
     const user = await this.currentUser(req);
     return { workout: await this.workoutService.startNextSet(user.id) };
+  }
+
+  /** Brings a later exercise forward to the current one, e.g. when its rack is taken. */
+  @Post('reorder')
+  @HttpCode(200)
+  async reorder(
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<{ workout: WorkoutState }> {
+    const user = await this.currentUser(req);
+    const { position } = validateReorderDto(body);
+    return {
+      workout: await this.workoutService.reorderExercise(user.id, position),
+    };
   }
 
   /** Abandons the unfinished workout so a new one can be started. */

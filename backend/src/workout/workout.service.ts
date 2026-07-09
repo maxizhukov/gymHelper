@@ -44,6 +44,7 @@ export type WorkoutEventKind =
   | 'rest_started'
   | 'rest_finished'
   | 'next_set_started'
+  | 'exercises_reordered'
   | 'workout_completed'
   | 'workout_abandoned';
 
@@ -570,6 +571,109 @@ export class WorkoutService implements OnModuleInit {
         this.mergeSession(session, updated.rows[0]),
         client,
       );
+    });
+  }
+
+  /**
+   * Pulls a later exercise forward to the cursor, pushing the ones it jumps over
+   * back by one — for the machine that was occupied when you walked up to it.
+   * The exercises keep their relative order otherwise, so nothing is skipped.
+   *
+   * Only exercises still ahead of the cursor move. Everything already logged
+   * sits at a `workout_sets.exercise_index` that names a position, so reordering
+   * a position with sets under it would silently reattribute them to a different
+   * lift. Refuse instead: the current exercise must be untouched.
+   */
+  async reorderExercise(
+    userId: number,
+    position: number,
+  ): Promise<WorkoutState> {
+    return this.db.transaction(async (client) => {
+      const session = await this.lockActiveSession(client, userId);
+
+      if (session.resting_since !== null) {
+        throw new BadRequestException(
+          'Rest is in progress — start the next set first.',
+        );
+      }
+
+      const cursor = session.exercise_index;
+      if (position <= cursor) {
+        throw new BadRequestException(
+          'Only an exercise still ahead can be brought forward.',
+        );
+      }
+
+      const rows = (
+        await client.query<{ position: number }>(
+          `SELECT position
+             FROM workout_session_exercises
+            WHERE session_id = $1
+            ORDER BY position`,
+          [session.id],
+        )
+      ).rows;
+      if (position >= rows.length) {
+        throw new BadRequestException('That exercise is not in this workout.');
+      }
+
+      const logged = await client.query(
+        'SELECT 1 FROM workout_sets WHERE session_id = $1 AND exercise_index = $2 LIMIT 1',
+        [session.id, cursor],
+      );
+      if (logged.rowCount) {
+        throw new BadRequestException(
+          'This exercise is already underway — finish it before switching.',
+        );
+      }
+
+      // The order the tail should end up in: the chosen exercise first, the rest
+      // trailing it unchanged.
+      const tail = rows.slice(cursor).map((row) => row.position);
+      const [moved] = tail.splice(position - cursor, 1);
+      tail.unshift(moved);
+
+      // Two statements, because (session_id, position) is a primary key and a
+      // single UPDATE would collide with a row it has not renumbered yet. Park
+      // the tail on negatives first, then land it on the final positions.
+      await client.query(
+        `UPDATE workout_session_exercises
+            SET position = -position - 1
+          WHERE session_id = $1 AND position >= $2`,
+        [session.id, cursor],
+      );
+      for (const [offset, from] of tail.entries()) {
+        await client.query(
+          `UPDATE workout_session_exercises
+              SET position = $3
+            WHERE session_id = $1 AND position = $2`,
+          [session.id, -from - 1, cursor + offset],
+        );
+      }
+
+      // Drafts are keyed by position, not by exercise. Any draft at or after the
+      // cursor now names a different lift, so it is no longer the user's input.
+      await client.query(
+        'DELETE FROM workout_set_drafts WHERE session_id = $1 AND exercise_index >= $2',
+        [session.id, cursor],
+      );
+
+      await this.recordEvent(
+        client,
+        session.id,
+        'exercises_reordered',
+        cursor,
+        session.set_number,
+      );
+      await this.recordEvent(
+        client,
+        session.id,
+        'exercise_started',
+        cursor,
+        session.set_number,
+      );
+
+      return this.buildState(session, client);
     });
   }
 

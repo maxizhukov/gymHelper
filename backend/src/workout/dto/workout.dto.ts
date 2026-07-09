@@ -16,6 +16,11 @@ const SLUG_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 // waiting to happen rather than a precision the user asked for.
 const WEIGHT_DECIMALS = 2;
 
+// An exercise position within a session. The real bound is the session's own
+// exercise count, checked in the service; this only keeps absurd values away
+// from the query.
+const POSITION_MAX = 999;
+
 export interface FinishSetDto {
   weight: number;
   reps: number;
@@ -82,6 +87,14 @@ export function validateStartWorkoutDto(body: unknown): { slug: string } {
     throw new BadRequestException('Invalid training day.');
   }
   return { slug };
+}
+
+/** The position of the exercise to bring forward to the current cursor. */
+export function validateReorderDto(body: unknown): { position: number } {
+  const { position } = requireObject(body);
+  return {
+    position: requireInteger(position, 'position', 0, POSITION_MAX),
+  };
 }
 
 /** The weight and reps actually performed. Both are required to log a set. */

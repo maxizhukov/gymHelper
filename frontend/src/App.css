@@ -442,6 +442,58 @@
   margin-top: 0.5rem;
 }
 
+/* Sits under the primary action: available mid-set, never mistaken for it. */
+.workout-secondary {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 3rem;
+  padding: 0.75rem;
+  font-size: 0.95rem;
+  border: 1px solid #333;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.workout-secondary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ── Reorder dialog ─────────────────────────────────────────────────────────
+   One row per upcoming exercise, each a full-width tap target. */
+.reorder-list {
+  list-style: none;
+  margin: 0.75rem 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  /* Long training days scroll rather than pushing Cancel off the screen. */
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.reorder-option {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 3.25rem;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  text-align: left;
+  border: 1px solid #333;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.reorder-option:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* Quiet, and far below the primary action: reachable, not hit by accident. */
 .workout-discard {
   width: 100%;

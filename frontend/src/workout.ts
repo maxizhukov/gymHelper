@@ -114,6 +114,16 @@ export function startNextSet(): Promise<AnchoredWorkout> {
   return post('next')
 }
 
+/**
+ * Brings the exercise at `position` forward to where the workout currently is,
+ * pushing the ones it jumps over back by one — for when the rack you were about
+ * to use is occupied. The server refuses once the current exercise has sets on
+ * it, so this only ever reorders what is still ahead.
+ */
+export function reorderExercise(position: number): Promise<AnchoredWorkout> {
+  return post('reorder', { position })
+}
+
 /** Abandons the unfinished workout so a new one can be started. */
 export async function abandonWorkout(): Promise<void> {
   const res = await fetch('/api/workout/abandon', {
