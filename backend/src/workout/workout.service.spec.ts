@@ -334,6 +334,81 @@ describeDb('WorkoutService — exercise identity outlives queue position', () =>
     await expect(service.deferExercise(userId)).rejects.toThrow(/Rest/i);
   });
 
+  /**
+   * Rests the current exercise out: logs every set it still owes and stops on
+   * the rest that follows the last one, cursor still on the finished exercise.
+   * This is the screen the user is on while walking to the next machine.
+   */
+  async function restAfterCurrentExercise(weight: number): Promise<void> {
+    const state = await service.getActiveWorkout(userId);
+    if (!state) return;
+    for (let set = state.setNumber; set <= SETS_PER_EXERCISE; set++) {
+      if (set > state.setNumber) await service.startNextSet(userId);
+      await service.finishSet(userId, weight, 10);
+    }
+  }
+
+  /**
+   * The bug every abandoned workout died on: the rest after the last set of an
+   * exercise announces the next one by name, but the cursor has not moved, so
+   * there was no way to defer the machine the user is walking towards. That
+   * rest is now a place to defer from — it ends, and the exercise it lands on
+   * is the one pushed back.
+   */
+  it('defers the exercise coming up when the machine is found busy during rest', async () => {
+    await service.startWorkout(userId, 'four');
+    await restAfterCurrentExercise(60); // Bench Press, all four sets.
+
+    const resting = await service.getActiveWorkout(userId);
+    expect(resting?.phase).toBe('rest');
+    expect(resting?.exerciseIndex).toBe(0);
+    expect(resting?.exerciseName).toBe('Bench Press');
+
+    // One tap, from the rest screen: rest ends, and the exercise it led into
+    // goes behind the next available one.
+    const deferred = await service.deferExercise(userId);
+
+    expect(deferred.phase).toBe('set');
+    expect(deferred.exerciseIndex).toBe(1);
+    expect(deferred.setNumber).toBe(1);
+    expect(deferred.exerciseName).toBe('Incline Press');
+    expect(currentExerciseSets(deferred)).toBe(0);
+    expect(deferred.deferredCount).toBe(1);
+    expect(names(deferred)).toEqual([
+      'Bench Press',
+      'Incline Press',
+      'Chest Press Machine',
+      'Cable Fly',
+    ]);
+
+    // The sets already logged stayed with the exercise that earned them.
+    await expect(setsByExerciseName(db, deferred.id)).resolves.toEqual({
+      'Bench Press': SETS_PER_EXERCISE,
+    });
+  });
+
+  /**
+   * Fail safe: the rest leads into the last exercise, which has nothing behind
+   * it to swap with. The tap is refused — and because ending the rest and
+   * deferring are one transaction, the refusal leaves the workout resting
+   * exactly where it was rather than half-advanced.
+   */
+  it('refuses to defer from the rest that leads into the last exercise', async () => {
+    await service.startWorkout(userId, 'chest');
+    await completeCurrentExercise(60); // Bench Press
+    await restAfterCurrentExercise(50); // Chest Press Machine — Incline is last.
+
+    await expect(service.deferExercise(userId)).rejects.toThrow(
+      /last exercise/i,
+    );
+
+    const after = await service.getActiveWorkout(userId);
+    expect(after?.phase).toBe('rest');
+    expect(after?.exerciseIndex).toBe(1);
+    expect(after?.setNumber).toBe(SETS_PER_EXERCISE);
+    expect(names(after!)).toEqual(QUEUE);
+  });
+
   /** Nothing to hop: the rotation would have no target. */
   it('refuses to defer the last exercise', async () => {
     await service.startWorkout(userId, 'chest');

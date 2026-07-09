@@ -895,73 +895,84 @@ export class WorkoutService implements OnModuleInit {
       if (session.resting_since === null) {
         return this.buildState(session, client);
       }
-
-      const exerciseId = await this.exerciseIdAt(
-        this.runner(client),
-        session.id,
-        session.exercise_position,
-      );
-
-      // Close out the set the user just rested after. The rest is over now, so
-      // its duration is a fact — record it against the set it followed.
-      await client.query(
-        `UPDATE workout_sets
-            SET rest_duration = CAST(
-                  GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - $4::timestamptz)))) AS INTEGER)
-          WHERE workout_session_id = $1 AND exercise_id = $2 AND set_number = $3`,
-        [session.id, exerciseId, session.set_number, session.resting_since],
-      );
-
-      await this.recordEvent(
-        client,
-        session.id,
-        'rest_finished',
-        session.exercise_position,
-        exerciseId,
-        session.set_number,
-      );
-
-      const movesToNextExercise =
-        session.set_number >= session.sets_per_exercise;
-      const nextPosition = movesToNextExercise
-        ? session.exercise_position + 1
-        : session.exercise_position;
-      const nextSetNumber = movesToNextExercise ? 1 : session.set_number + 1;
-
-      // The final set of the final exercise completes the workout in finishSet,
-      // so the cursor can never be advanced past the last exercise here. Guard
-      // anyway rather than trust that invariant from a mutating endpoint.
-      const exerciseCount = await this.countExercises(client, session.id);
-      if (nextPosition >= exerciseCount) {
-        throw new BadRequestException('The workout has no further exercises.');
-      }
-
-      const updated = await client.query<SessionRow>(
-        `UPDATE workout_sessions
-            SET resting_since = NULL, exercise_position = $2, set_number = $3,
-                set_started_at = now()
-          WHERE id = $1
-        RETURNING *, now() AS server_now`,
-        [session.id, nextPosition, nextSetNumber],
-      );
-
-      const nextExerciseId = movesToNextExercise
-        ? await this.exerciseIdAt(this.runner(client), session.id, nextPosition)
-        : exerciseId;
-      await this.recordEvent(
-        client,
-        session.id,
-        movesToNextExercise ? 'exercise_started' : 'next_set_started',
-        nextPosition,
-        nextExerciseId,
-        nextSetNumber,
-      );
-
-      return this.buildState(
-        this.mergeSession(session, updated.rows[0]),
-        client,
-      );
+      return this.buildState(await this.endRest(client, session), client);
     });
+  }
+
+  /**
+   * Ends the rest the session is in and moves the cursor on: to the next set,
+   * or — when the exercise is done — to the first set of the next exercise.
+   * Returns the session as it now stands. The caller holds the session lock.
+   *
+   * Shared with `deferExercise`, which reaches the next exercise the same way
+   * before pushing it back, so that both do it in one transaction and record
+   * the same events.
+   */
+  private async endRest(
+    client: PoolClient,
+    session: SessionRow,
+  ): Promise<SessionRow> {
+    const exerciseId = await this.exerciseIdAt(
+      this.runner(client),
+      session.id,
+      session.exercise_position,
+    );
+
+    // Close out the set the user just rested after. The rest is over now, so
+    // its duration is a fact — record it against the set it followed.
+    await client.query(
+      `UPDATE workout_sets
+          SET rest_duration = CAST(
+                GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - $4::timestamptz)))) AS INTEGER)
+        WHERE workout_session_id = $1 AND exercise_id = $2 AND set_number = $3`,
+      [session.id, exerciseId, session.set_number, session.resting_since],
+    );
+
+    await this.recordEvent(
+      client,
+      session.id,
+      'rest_finished',
+      session.exercise_position,
+      exerciseId,
+      session.set_number,
+    );
+
+    const movesToNextExercise = session.set_number >= session.sets_per_exercise;
+    const nextPosition = movesToNextExercise
+      ? session.exercise_position + 1
+      : session.exercise_position;
+    const nextSetNumber = movesToNextExercise ? 1 : session.set_number + 1;
+
+    // The final set of the final exercise completes the workout in finishSet,
+    // so the cursor can never be advanced past the last exercise here. Guard
+    // anyway rather than trust that invariant from a mutating endpoint.
+    const exerciseCount = await this.countExercises(client, session.id);
+    if (nextPosition >= exerciseCount) {
+      throw new BadRequestException('The workout has no further exercises.');
+    }
+
+    const updated = await client.query<SessionRow>(
+      `UPDATE workout_sessions
+          SET resting_since = NULL, exercise_position = $2, set_number = $3,
+              set_started_at = now()
+        WHERE id = $1
+      RETURNING *, now() AS server_now`,
+      [session.id, nextPosition, nextSetNumber],
+    );
+
+    const nextExerciseId = movesToNextExercise
+      ? await this.exerciseIdAt(this.runner(client), session.id, nextPosition)
+      : exerciseId;
+    await this.recordEvent(
+      client,
+      session.id,
+      movesToNextExercise ? 'exercise_started' : 'next_set_started',
+      nextPosition,
+      nextExerciseId,
+      nextSetNumber,
+    );
+
+    return this.mergeSession(session, updated.rows[0]);
   }
 
   /**
@@ -984,6 +995,11 @@ export class WorkoutService implements OnModuleInit {
    * simply trades places with the one behind it — the user moves on, and the
    * machine it was waiting on gets another turn.
    *
+   * Callable from the rest that ends an exercise as well as from the exercise
+   * itself: that rest already names the exercise coming up, so it is where a
+   * busy machine is found. It is ended first, and the exercise it lands on is
+   * the one deferred.
+   *
    * Only exercises with nothing logged against them may move. That is a product
    * rule — you finish what you started — and no longer a constraint on the data:
    * sets name their exercise by identity, so reordering the queue cannot
@@ -991,8 +1007,19 @@ export class WorkoutService implements OnModuleInit {
    */
   async deferExercise(userId: number): Promise<WorkoutState> {
     return this.db.transaction(async (client) => {
-      const session = await this.lockActiveSession(client, userId);
+      const locked = await this.lockActiveSession(client, userId);
       const run = this.runner(client);
+
+      // The rest that ends an exercise is the walk to the next machine, and so
+      // the moment its being busy is discovered — a screen before the cursor
+      // moves. Ending that rest is exactly what "Start next set" would do, so do
+      // it here, in this transaction, and defer the exercise it lands on. A rest
+      // between two sets of one exercise leads back to a machine already in use.
+      const session =
+        locked.resting_since !== null &&
+        locked.set_number >= locked.sets_per_exercise
+          ? await this.endRest(client, locked)
+          : locked;
 
       if (session.resting_since !== null) {
         throw new BadRequestException(

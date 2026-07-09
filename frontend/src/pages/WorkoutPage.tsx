@@ -16,6 +16,7 @@ import {
   restRemainingSeconds,
   saveDraft,
   showMachineBusyButton,
+  showMachineBusyButtonDuringRest,
   startNextSet,
   useTicker,
   useWorkout,
@@ -231,6 +232,19 @@ function ActiveWorkout({
           >
             Start next set
           </Button>
+
+          {/* This rest ends an exercise, so the next machine is the one being
+              walked to — and the one that can turn out to be busy. */}
+          {showMachineBusyButtonDuringRest(workout) && (
+            <Button
+              type="button"
+              className="workout-secondary"
+              disabled={busy}
+              onClick={() => void handleDefer()}
+            >
+              Machine busy — do this later
+            </Button>
+          )}
         </section>
       ) : (
         <section className="workout-set" aria-label="Current set">
@@ -295,7 +309,7 @@ function ActiveWorkout({
             Finish set
           </Button>
 
-          {/* Only before the first set lands: after that the order is fixed. */}
+          {/* While this exercise has no sets on it, wherever it sits in the queue. */}
           {showMachineBusyButton(workout) && (
             <Button
               type="button"

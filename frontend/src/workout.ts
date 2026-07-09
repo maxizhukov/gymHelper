@@ -141,6 +141,25 @@ export function showMachineBusyButton(workout: WorkoutState): boolean {
 }
 
 /**
+ * The same offer, on the rest screen that ends an exercise. That rest *is* the
+ * walk to the next machine — it already announces which exercise is coming —
+ * so it is where the user finds out the machine is busy, a screen before the
+ * cursor moves. Withholding the button until "Start next set" is tapped puts it
+ * one tap after the moment it is needed, which reads as it never showing at all.
+ *
+ * The exercise the rest leads into is the one that would be deferred, so it is
+ * the one the rule is asked about. A rest between two sets of the same exercise
+ * leads back to a machine already in use, and the last exercise has nothing
+ * behind it to swap with — neither offers the button.
+ */
+export function showMachineBusyButtonDuringRest(workout: WorkoutState): boolean {
+  if (workout.setNumber < workout.setsPerExercise) return false
+  const upcoming = workout.exerciseIndex + 1
+  if (upcoming >= workout.exerciseCount - 1) return false
+  return workout.exercises[upcoming]?.completedSets === 0
+}
+
+/**
  * Pushes the current exercise behind the next available one and opens that one
  * instead — for when the machine you were about to use is occupied. Deferred,
  * not skipped: it comes straight back once that exercise is done, and the

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   showMachineBusyButton,
+  showMachineBusyButtonDuringRest,
   type WorkoutExercise,
   type WorkoutPhase,
   type WorkoutState,
@@ -184,5 +185,59 @@ describe('showMachineBusyButton', () => {
       phase: 'completed',
     })
     expect(showMachineBusyButton(finished)).toBe(false)
+  })
+})
+
+/**
+ * The rest that ends an exercise is the walk to the next machine — it is the
+ * screen the user is on when they find it busy, one tap before the cursor
+ * moves. Every workout abandoned to this bug died exactly here: four sets on
+ * exercise 1, resting, no way to defer exercise 2.
+ */
+describe('showMachineBusyButtonDuringRest', () => {
+  /** Rest during a workout keeps the cursor on the exercise just finished. */
+  function resting(
+    completedSets: number[],
+    exerciseIndex: number,
+    setNumber: number,
+  ): WorkoutState {
+    return workoutState(completedSets, exerciseIndex, {
+      phase: 'rest',
+      setNumber,
+      restRemainingSeconds: 45,
+    })
+  }
+
+  /** The reported scenario, at the screen it was reported from. */
+  it('offers the button on the rest that ends an exercise', () => {
+    expect(showMachineBusyButtonDuringRest(resting([4, 0, 0, 0], 0, 4))).toBe(
+      true,
+    )
+    expect(showMachineBusyButtonDuringRest(resting([4, 4, 0, 0], 1, 4))).toBe(
+      true,
+    )
+  })
+
+  /** A rest between two sets leads back to the machine already in use. */
+  it('withholds it on a rest between two sets of one exercise', () => {
+    for (let setNumber = 1; setNumber < SETS_PER_EXERCISE; setNumber++) {
+      expect(
+        showMachineBusyButtonDuringRest(resting([setNumber, 0, 0, 0], 0, setNumber)),
+      ).toBe(false)
+    }
+  })
+
+  /** The one true special case: nothing behind the last exercise to swap with. */
+  it('withholds it when the rest leads into the last exercise', () => {
+    expect(showMachineBusyButtonDuringRest(resting([4, 4, 4, 0], 2, 4))).toBe(
+      false,
+    )
+  })
+
+  /** The same one rule: an exercise with sets on it is underway. */
+  it('withholds it when the exercise coming up is already underway', () => {
+    expect(showMachineBusyButtonDuringRest(resting([4, 2, 0, 0], 0, 4))).toBe(
+      false,
+    )
   })
 })
