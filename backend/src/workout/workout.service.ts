@@ -80,6 +80,39 @@ export interface WorkoutExercise {
 }
 
 /**
+ * Whether the exercise under the cursor may be pushed back a place — the rule
+ * behind the "Machine busy — do this later" button.
+ *
+ * It is stated per *exercise*, never per workout: `currentExerciseSets` counts
+ * only the sets logged against the exercise the cursor names, so the answer
+ * resets to true at the start of every exercise and goes false as soon as that
+ * exercise's first set lands. A whole-workout count here would light the button
+ * on the first exercise only, which is the bug this function exists to make
+ * unrepresentable.
+ *
+ * Pure, and exported, so the rule can be exhaustively tested without a database
+ * standing behind it — `buildState` supplies the counts, and `deferExercise`
+ * re-checks the same conditions against the database, because the client is
+ * untrusted.
+ */
+export function canDeferExercise(cursor: {
+  phase: WorkoutPhase;
+  /** Sets logged against the current exercise — not against the workout. */
+  currentExerciseSets: number;
+  exercisePosition: number;
+  exerciseCount: number;
+}): boolean {
+  return (
+    // Resting is not a moment to reorder the queue.
+    cursor.phase === 'set' &&
+    // Untouched: you finish what you started.
+    cursor.currentExerciseSets === 0 &&
+    // The last exercise has nothing that could be done before it.
+    cursor.exercisePosition < cursor.exerciseCount - 1
+  );
+}
+
+/**
  * Everything the workout screen renders, reconstructed from the database on
  * every read. Timers are sent as server-computed second counts (plus the
  * timestamps they derive from) so the client never has to trust its own clock
@@ -1297,10 +1330,12 @@ export class WorkoutService implements OnModuleInit {
 
     // Mirrors the guards in `deferExercise`. The button is hidden when this is
     // false; the endpoint refuses anyway, since the client is untrusted.
-    const canDefer =
-      phase === 'set' &&
-      currentExerciseSets === 0 &&
-      session.exercise_position < exercises.length - 1;
+    const canDefer = canDeferExercise({
+      phase,
+      currentExerciseSets,
+      exercisePosition: session.exercise_position,
+      exerciseCount: exercises.length,
+    });
 
     // Only the ones still waiting: once the cursor reaches a deferred exercise
     // it is no longer pending, it is the exercise being done.

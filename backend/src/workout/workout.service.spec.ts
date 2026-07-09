@@ -221,6 +221,57 @@ describeDb('WorkoutService — exercise identity outlives queue position', () =>
     expect(resumed?.canDefer).toBe(true);
   });
 
+  /**
+   * The regression that shipped twice: the button appeared before the very
+   * first exercise and never again. Walking a four-exercise workout end to end
+   * is the only way to catch that — a test that stops after exercise 1 passes
+   * either way. Asserted against the state each *mutation* returns, since that
+   * is the object the workout screen renders, not a later read of the database.
+   */
+  it('offers the defer button at the start of every exercise', async () => {
+    await service.startWorkout(userId, 'four');
+    const queue = ['Bench Press', 'Chest Press Machine', 'Incline Press'];
+
+    for (const [position, name] of queue.entries()) {
+      // Before the first set of this exercise: the machine may be busy.
+      const opening = await service.getActiveWorkout(userId);
+      expect(opening?.exerciseName).toBe(name);
+      expect(opening?.exerciseIndex).toBe(position);
+      expect(opening?.phase).toBe('set');
+      expect(opening?.setNumber).toBe(1);
+      expect(opening?.canDefer).toBe(true);
+
+      // The first set lands: the exercise is underway, the button goes away.
+      const afterFirstSet = await service.finishSet(userId, 60, 10);
+      expect(afterFirstSet.phase).toBe('rest');
+      expect(afterFirstSet.canDefer).toBe(false);
+
+      // ...and stays away for every remaining set of this exercise.
+      for (let set = 2; set <= SETS_PER_EXERCISE; set++) {
+        const nextSet = await service.startNextSet(userId);
+        expect(nextSet.exerciseName).toBe(name);
+        expect(nextSet.setNumber).toBe(set);
+        expect(nextSet.phase).toBe('set');
+        expect(nextSet.canDefer).toBe(false);
+
+        await service.finishSet(userId, 60, 10);
+      }
+
+      // Crossing into the next exercise is what re-offers the button, and the
+      // state that mutation returns is what the screen renders.
+      const nextExercise = await service.startNextSet(userId);
+      expect(nextExercise.exerciseIndex).toBe(position + 1);
+      expect(nextExercise.setNumber).toBe(1);
+      expect(nextExercise.canDefer).toBe(nextExercise.exerciseIndex < 3);
+    }
+
+    // The fourth and last exercise: nothing left to do before it.
+    const last = await service.getActiveWorkout(userId);
+    expect(last?.exerciseName).toBe('Cable Fly');
+    expect(last?.exerciseIndex).toBe(3);
+    expect(last?.canDefer).toBe(false);
+  });
+
   it('withdraws the defer button once the exercise is underway or last', async () => {
     await service.startWorkout(userId, 'chest');
 

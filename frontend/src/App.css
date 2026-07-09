@@ -6,6 +6,21 @@
   text-align: center;
 }
 
+/* The running build, on every screen. In the document flow rather than pinned
+   to the viewport, so it can never sit on top of a button on a short screen.
+   Deliberately quiet: it is a diagnostic, not part of the workout. */
+.app-version {
+  padding: 0 1.25rem 1.5rem;
+  text-align: center;
+}
+
+.app-version p {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #666;
+  font-variant-numeric: tabular-nums;
+}
+
 .app h1 {
   font-size: 2rem;
   margin: 0 0 0.25rem;

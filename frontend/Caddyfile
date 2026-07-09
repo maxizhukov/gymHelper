@@ -12,6 +12,26 @@
 	# Everything else is the static React SPA, with client-side routing fallback.
 	handle {
 		root * /srv
+
+		# Vite fingerprints everything under /assets, so those URLs only ever
+		# name one build and can be cached hard.
+		@fingerprinted path /assets/*
+		header @fingerprinted Cache-Control "public, max-age=31536000, immutable"
+
+		# Everything else resolves to index.html, which names the current bundle
+		# and so must never be cached: with no Cache-Control the browser picks
+		# its own heuristic freshness and can keep serving the previous deploy's
+		# HTML — and therefore the previous deploy's JavaScript — long after the
+		# new one shipped. Revalidating every load is what makes the version in
+		# the footer trustworthy.
+		#
+		# Matched as "not an asset" rather than as /index.html: `header` runs
+		# before `try_files` rewrites, so at this point a deep link is still
+		# /workout/5 and a root visit is still /. Neither would ever match a
+		# literal /index.html.
+		@html not path /assets/*
+		header @html Cache-Control "no-cache"
+
 		try_files {path} /index.html
 		file_server
 	}

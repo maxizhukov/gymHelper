@@ -1,0 +1,18 @@
+#!/bin/sh
+# Bumps the patch version on every commit and stages the files it rewrote, so
+# the version shown in the UI always identifies the build that is deployed.
+#
+# Enabled by `git config core.hooksPath .githooks`, which the root `prepare`
+# script runs on `npm install`. Run it by hand if you cloned without installing.
+#
+# A commit that only reverts the bump would fight the hook, so the bump is
+# skipped when nothing else is staged.
+set -e
+
+if git diff --cached --quiet; then
+  exit 0
+fi
+
+node scripts/bump-version.mjs
+
+git add package.json package-lock.json frontend/package.json frontend/package-lock.json
