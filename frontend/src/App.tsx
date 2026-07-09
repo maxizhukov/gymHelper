@@ -11,6 +11,7 @@ import { useAuth } from './auth/useAuth'
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
 import ProfilePage from './pages/ProfilePage'
+import TrainingDayPage from './pages/TrainingDayPage'
 import './App.css'
 
 function Loading() {
@@ -60,6 +61,7 @@ function App() {
 
         <Route element={<RequireAuth />}>
           <Route path="/" element={<HomePage />} />
+          <Route path="/days/:slug" element={<TrainingDayPage />} />
           <Route path="/profile" element={<ProfilePage />} />
         </Route>
 

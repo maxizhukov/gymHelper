@@ -149,9 +149,39 @@
   padding: 0;
 }
 
-/* Compact against the default .card padding — these are a scannable list, not a panel. */
+/* Renders as an <a> (a route link), so reset link styling. Compact against the
+   default .card padding — these are a scannable list, not a panel. */
 .training-day-card {
+  display: block;
   padding: 1rem 1.25rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.exercise-groups {
+  margin-top: 1rem;
+  text-align: left;
+}
+
+.exercise-list {
+  margin: 0;
+  /* Room for the numbers, which sit outside the list. */
+  padding: 0 0 0 1.75rem;
+}
+
+.exercise-item {
+  padding: 0.5rem 0;
+  font-size: 1rem;
+}
+
+.exercise-item::marker {
+  color: #888;
+  font-size: 0.85rem;
+}
+
+/* The separator between groups doubles as the gap, so it needs room below too. */
+.exercise-group .separator {
+  margin: 1rem 0;
 }
 
 .home-nav {
