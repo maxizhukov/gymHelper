@@ -20,6 +20,14 @@ import { TrainingConfigService } from '../training/training-config.service';
  * `workout_sessions` row. Completed sets accumulate in `workout_sets`, in-flight
  * keypad input in `workout_set_drafts`, and an append-only audit of what the
  * user did in `workout_events`.
+ *
+ * The exercise order is a *mutable queue*, not the training day's list:
+ * `workout_session_exercises.position` is the running order, rewritten in place
+ * whenever the user defers an exercise. The cursor names a position in that
+ * queue, and because only exercises with no sets logged against them may move
+ * (see `deferExercise`), the cursor is always the first unfinished exercise in
+ * the current queue. Resuming a workout therefore restores the reordered queue,
+ * never the original list.
  */
 
 /** How many sets each exercise gets. Snapshotted onto the session at start. */
@@ -44,7 +52,7 @@ export type WorkoutEventKind =
   | 'rest_started'
   | 'rest_finished'
   | 'next_set_started'
-  | 'exercises_reordered'
+  | 'exercise_deferred'
   | 'workout_completed'
   | 'workout_abandoned';
 
@@ -54,6 +62,8 @@ export type WorkoutPhase = 'set' | 'rest' | 'completed';
 export interface WorkoutExercise {
   position: number;
   name: string;
+  /** True once the user has pushed this one back at least once. */
+  deferred: boolean;
 }
 
 /**
@@ -78,6 +88,16 @@ export interface WorkoutState {
   exerciseIndex: number;
   exerciseCount: number;
   exerciseName: string;
+
+  /**
+   * Whether the current exercise may be pushed to the back of the queue: it has
+   * to be untouched (no sets logged), not resting, and not already last — there
+   * is nothing to do first if it is. The client uses this to show the button;
+   * `deferExercise` re-checks it, because the client is untrusted.
+   */
+  canDefer: boolean;
+  /** Deferred exercises still waiting later in the queue. Informational. */
+  deferredCount: number;
 
   setNumber: number;
   setsPerExercise: number;
@@ -186,6 +206,10 @@ export class WorkoutService implements OnModuleInit {
       'CREATE INDEX IF NOT EXISTS workout_sessions_user_id_idx ON workout_sessions (user_id)',
     );
 
+    // The session's exercise queue. Seeded from the training day at start, then
+    // owned by the session: `position` is rewritten whenever the user defers an
+    // exercise, and it — not the plan — is the order the workout runs in.
+    //
     // The exercise list is snapshotted per session, so editing the plan later
     // cannot renumber or rename the exercises of a workout already in progress.
     // The exercise_id link is kept for provenance but nulls out if the plan row
@@ -196,9 +220,14 @@ export class WorkoutService implements OnModuleInit {
         position    INTEGER NOT NULL,
         exercise_id INTEGER REFERENCES exercises(id) ON DELETE SET NULL,
         name        TEXT NOT NULL,
+        deferred_at TIMESTAMPTZ,
         PRIMARY KEY (session_id, position)
       )
     `);
+    // Added after the table shipped; workouts already in flight keep their rows.
+    await this.db.query(
+      'ALTER TABLE workout_session_exercises ADD COLUMN IF NOT EXISTS deferred_at TIMESTAMPTZ',
+    );
 
     // One row per completed set. The unique key makes the write idempotent, so
     // a retried "Finish set" overwrites rather than duplicating.
@@ -575,19 +604,20 @@ export class WorkoutService implements OnModuleInit {
   }
 
   /**
-   * Pulls a later exercise forward to the cursor, pushing the ones it jumps over
-   * back by one — for the machine that was occupied when you walked up to it.
-   * The exercises keep their relative order otherwise, so nothing is skipped.
+   * Pushes the current exercise to the back of the queue — the machine was busy.
+   * Everything behind it shifts forward one place, so the exercise that was next
+   * becomes current and nothing is skipped: the deferred exercise comes round
+   * again, and the workout cannot complete until it has been done.
    *
-   * Only exercises still ahead of the cursor move. Everything already logged
-   * sits at a `workout_sets.exercise_index` that names a position, so reordering
-   * a position with sets under it would silently reattribute them to a different
-   * lift. Refuse instead: the current exercise must be untouched.
+   * Only exercises with nothing logged against them may move. A completed set
+   * records its `workout_sets.exercise_index` — a *position*, not an exercise id
+   * — so moving a position that has sets under it would silently reattribute
+   * them to a different lift. The cursor sits at the first unfinished exercise
+   * and everything ahead of it is untouched by definition, so shifting the
+   * cursor's tail is the one rewrite that cannot corrupt history. Refuse the
+   * rest.
    */
-  async reorderExercise(
-    userId: number,
-    position: number,
-  ): Promise<WorkoutState> {
+  async deferExercise(userId: number): Promise<WorkoutState> {
     return this.db.transaction(async (client) => {
       const session = await this.lockActiveSession(client, userId);
 
@@ -598,23 +628,14 @@ export class WorkoutService implements OnModuleInit {
       }
 
       const cursor = session.exercise_index;
-      if (position <= cursor) {
-        throw new BadRequestException(
-          'Only an exercise still ahead can be brought forward.',
-        );
-      }
+      const exerciseCount = await this.countExercises(client, session.id);
 
-      const rows = (
-        await client.query<{ position: number }>(
-          `SELECT position
-             FROM workout_session_exercises
-            WHERE session_id = $1
-            ORDER BY position`,
-          [session.id],
-        )
-      ).rows;
-      if (position >= rows.length) {
-        throw new BadRequestException('That exercise is not in this workout.');
+      // Nothing to do first: deferring the last exercise would just re-present
+      // it. Fail rather than pretend the tap did something.
+      if (cursor >= exerciseCount - 1) {
+        throw new BadRequestException(
+          'This is the last exercise — there is nothing to do before it.',
+        );
       }
 
       const logged = await client.query(
@@ -623,19 +644,27 @@ export class WorkoutService implements OnModuleInit {
       );
       if (logged.rowCount) {
         throw new BadRequestException(
-          'This exercise is already underway — finish it before switching.',
+          'This exercise is already underway — finish it before deferring.',
         );
       }
 
-      // The order the tail should end up in: the chosen exercise first, the rest
-      // trailing it unchanged.
-      const tail = rows.slice(cursor).map((row) => row.position);
-      const [moved] = tail.splice(position - cursor, 1);
-      tail.unshift(moved);
+      const lastPosition = exerciseCount - 1;
 
-      // Two statements, because (session_id, position) is a primary key and a
-      // single UPDATE would collide with a row it has not renumbered yet. Park
-      // the tail on negatives first, then land it on the final positions.
+      // The order the tail should end up in: everything after the cursor moves
+      // up one, and the deferred exercise trails them.
+      const tail: number[] = [];
+      for (let position = cursor + 1; position <= lastPosition; position++) {
+        tail.push(position);
+      }
+      tail.push(cursor);
+
+      // Renumbered in two passes, because (session_id, position) is a primary
+      // key: a single `SET position = position - 1` can collide with a row it
+      // has not renumbered yet. Postgres checks the key per row, not at the end
+      // of the statement, and the order it visits rows in is not ours to
+      // choose — it happens to work on an ascending scan, which is exactly the
+      // kind of luck not to build on. Park the tail on negatives (always free,
+      // positions are non-negative), then land it on the final positions.
       await client.query(
         `UPDATE workout_session_exercises
             SET position = -position - 1
@@ -651,6 +680,13 @@ export class WorkoutService implements OnModuleInit {
         );
       }
 
+      await client.query(
+        `UPDATE workout_session_exercises
+            SET deferred_at = now()
+          WHERE session_id = $1 AND position = $2`,
+        [session.id, lastPosition],
+      );
+
       // Drafts are keyed by position, not by exercise. Any draft at or after the
       // cursor now names a different lift, so it is no longer the user's input.
       await client.query(
@@ -661,10 +697,12 @@ export class WorkoutService implements OnModuleInit {
       await this.recordEvent(
         client,
         session.id,
-        'exercises_reordered',
+        'exercise_deferred',
         cursor,
         session.set_number,
       );
+      // The cursor has not moved, but the exercise under it has: what is now at
+      // `cursor` is the exercise the user is about to start.
       await this.recordEvent(
         client,
         session.id,
@@ -752,8 +790,12 @@ export class WorkoutService implements OnModuleInit {
     ) =>
       client ? client.query<T>(text, params) : this.db.query<T>(text, params);
 
-    const exercisesResult = await run<{ position: number; name: string }>(
-      `SELECT position, name
+    const exercisesResult = await run<{
+      position: number;
+      name: string;
+      deferred_at: Date | null;
+    }>(
+      `SELECT position, name, deferred_at
          FROM workout_session_exercises
         WHERE session_id = $1
         ORDER BY position`,
@@ -762,21 +804,27 @@ export class WorkoutService implements OnModuleInit {
     const exercises: WorkoutExercise[] = exercisesResult.rows.map((row) => ({
       position: row.position,
       name: row.name,
+      deferred: row.deferred_at !== null,
     }));
 
     const totalsResult = await run<{
       sets_completed: string;
       exercises_completed: string;
+      current_exercise_sets: string;
     }>(
       `SELECT count(*) AS sets_completed,
-              count(DISTINCT exercise_index) AS exercises_completed
+              count(DISTINCT exercise_index) AS exercises_completed,
+              count(*) FILTER (WHERE exercise_index = $2) AS current_exercise_sets
          FROM workout_sets
         WHERE session_id = $1`,
-      [session.id],
+      [session.id, session.exercise_index],
     );
     const setsCompleted = Number(totalsResult.rows[0]?.sets_completed ?? 0);
     const exercisesCompleted = Number(
       totalsResult.rows[0]?.exercises_completed ?? 0,
+    );
+    const currentExerciseSets = Number(
+      totalsResult.rows[0]?.current_exercise_sets ?? 0,
     );
 
     const completed = session.completed_at !== null;
@@ -808,6 +856,22 @@ export class WorkoutService implements OnModuleInit {
 
     const exerciseName = exercises[session.exercise_index]?.name ?? '';
 
+    // Mirrors the guards in `deferExercise`. The button is hidden when this is
+    // false; the endpoint refuses anyway, since the client is untrusted.
+    const canDefer =
+      phase === 'set' &&
+      currentExerciseSets === 0 &&
+      session.exercise_index < exercises.length - 1;
+
+    // Only the ones still waiting: once the cursor reaches a deferred exercise
+    // it is no longer pending, it is the exercise being done.
+    const deferredCount = completed
+      ? 0
+      : exercises.filter(
+          (exercise) =>
+            exercise.deferred && exercise.position > session.exercise_index,
+        ).length;
+
     const { plannedWeight, draftReps } = completed
       ? { plannedWeight: null, draftReps: null }
       : await this.resolvePrefill(session, exerciseName, run);
@@ -825,6 +889,8 @@ export class WorkoutService implements OnModuleInit {
       exerciseIndex: session.exercise_index,
       exerciseCount: exercises.length,
       exerciseName,
+      canDefer,
+      deferredCount,
       setNumber: session.set_number,
       setsPerExercise: session.sets_per_exercise,
       targetReps: session.planned_reps,

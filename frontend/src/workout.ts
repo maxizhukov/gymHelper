@@ -17,6 +17,8 @@ export type WorkoutPhase = 'set' | 'rest' | 'completed'
 export type WorkoutExercise = {
   position: number
   name: string
+  /** True once the user has pushed this one back at least once. */
+  deferred: boolean
 }
 
 export type WorkoutState = {
@@ -35,6 +37,11 @@ export type WorkoutState = {
   exerciseIndex: number
   exerciseCount: number
   exerciseName: string
+
+  /** Whether the current exercise may be pushed to the back of the queue. */
+  canDefer: boolean
+  /** Deferred exercises still waiting later in the queue. Informational. */
+  deferredCount: number
 
   setNumber: number
   setsPerExercise: number
@@ -115,13 +122,13 @@ export function startNextSet(): Promise<AnchoredWorkout> {
 }
 
 /**
- * Brings the exercise at `position` forward to where the workout currently is,
- * pushing the ones it jumps over back by one — for when the rack you were about
- * to use is occupied. The server refuses once the current exercise has sets on
- * it, so this only ever reorders what is still ahead.
+ * Pushes the current exercise to the back of the queue and opens the one that
+ * was next — for when the machine you were about to use is occupied. Deferred,
+ * not skipped: it comes round again, and the workout cannot finish without it.
+ * The server refuses once the exercise has sets on it.
  */
-export function reorderExercise(position: number): Promise<AnchoredWorkout> {
-  return post('reorder', { position })
+export function deferExercise(): Promise<AnchoredWorkout> {
+  return post('defer')
 }
 
 /** Abandons the unfinished workout so a new one can be started. */

@@ -8,18 +8,17 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import {
   abandonWorkout,
+  deferExercise,
   elapsedSeconds,
   finishSet,
   formatDuration,
   nextUp,
-  reorderExercise,
   restRemainingSeconds,
   saveDraft,
   startNextSet,
   useTicker,
   useWorkout,
   type AnchoredWorkout,
-  type WorkoutExercise,
 } from '../workout'
 
 /**
@@ -94,7 +93,6 @@ function ActiveWorkout({
     workout.draftReps ?? workout.targetReps,
   )
   const [modalOpen, setModalOpen] = useState(false)
-  const [reorderOpen, setReorderOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -161,13 +159,16 @@ function ActiveWorkout({
     await run(() => finishSet(weight, reps))
   }
 
-  /** Swaps a later exercise into the current slot. */
-  async function handleReorder(position: number) {
+  /**
+   * Sends this exercise to the back of the queue and opens the next one. One
+   * tap, no confirmation: the machine is busy and the user is standing in front
+   * of it. Nothing is lost — the server keeps the exercise in the workout.
+   */
+  async function handleDefer() {
     // A draft written after the swap would be filed against the exercise that
     // replaced this one, so drop what has been typed rather than misattribute it.
     window.clearTimeout(draftTimer.current)
-    setReorderOpen(false)
-    await run(() => reorderExercise(position))
+    await run(deferExercise)
   }
 
   async function handleAbandon() {
@@ -188,11 +189,6 @@ function ActiveWorkout({
   const remaining = restRemainingSeconds(anchored)
   const upNext = nextUp(workout)
 
-  // The exercises still ahead. Offered only on the first set, because once a set
-  // is logged against this slot the server will not let it be swapped.
-  const upcoming = workout.exercises.slice(workout.exerciseIndex + 1)
-  const canReorder = workout.setNumber === 1 && upcoming.length > 0
-
   return (
     <main className="app workout">
       <header className="workout-header">
@@ -201,6 +197,11 @@ function ActiveWorkout({
           {formatDuration(elapsedSeconds(anchored))}
         </p>
       </header>
+
+      {/* Informational only: these exercises are queued at the end, not dropped. */}
+      {workout.deferredCount > 0 && (
+        <p className="workout-deferred">Deferred: {workout.deferredCount}</p>
+      )}
 
       {workout.phase === 'rest' ? (
         <section className="workout-rest" aria-label="Rest">
@@ -293,14 +294,15 @@ function ActiveWorkout({
             Finish set
           </Button>
 
-          {canReorder && (
+          {/* Only before the first set lands: after that the order is fixed. */}
+          {workout.canDefer && (
             <Button
               type="button"
               className="workout-secondary"
               disabled={busy}
-              onClick={() => setReorderOpen(true)}
+              onClick={() => void handleDefer()}
             >
-              Machine taken? Do another exercise first
+              Machine busy — do this later
             </Button>
           )}
         </section>
@@ -314,14 +316,6 @@ function ActiveWorkout({
         onWeightChange={changeWeight}
         onRepsChange={changeReps}
         onSave={handleSaveSet}
-        busy={busy}
-      />
-
-      <ReorderDialog
-        open={reorderOpen}
-        onOpenChange={setReorderOpen}
-        upcoming={upcoming}
-        onPick={(position) => void handleReorder(position)}
         busy={busy}
       />
 
@@ -433,53 +427,6 @@ function FinishSetDialog({
             </Button>
             <Dialog.Close className="dialog-close">Cancel</Dialog.Close>
           </Form>
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
-  )
-}
-
-/**
- * The exercises still to come. Picking one moves it to now; the exercises it
- * jumps over keep their order and follow it, so nothing is dropped.
- */
-function ReorderDialog({
-  open,
-  onOpenChange,
-  upcoming,
-  onPick,
-  busy,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  upcoming: WorkoutExercise[]
-  onPick: (position: number) => void
-  busy: boolean
-}) {
-  return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Backdrop className="dialog-backdrop" />
-        <Dialog.Popup
-          className="dialog-popup"
-          aria-label="Do another exercise first"
-        >
-          <p className="label">Do this exercise now</p>
-          <ul className="reorder-list">
-            {upcoming.map((exercise) => (
-              <li key={exercise.position}>
-                <Button
-                  type="button"
-                  className="reorder-option"
-                  disabled={busy}
-                  onClick={() => onPick(exercise.position)}
-                >
-                  {exercise.name}
-                </Button>
-              </li>
-            ))}
-          </ul>
-          <Dialog.Close className="dialog-close">Cancel</Dialog.Close>
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>

@@ -16,7 +16,6 @@ import { readSessionToken } from '../auth/cookie.util';
 import { SessionService } from '../auth/session.service';
 import {
   validateFinishSetDto,
-  validateReorderDto,
   validateSaveDraftDto,
   validateStartWorkoutDto,
 } from './dto/workout.dto';
@@ -111,18 +110,16 @@ export class WorkoutController {
     return { workout: await this.workoutService.startNextSet(user.id) };
   }
 
-  /** Brings a later exercise forward to the current one, e.g. when its rack is taken. */
-  @Post('reorder')
+  /**
+   * Pushes the current exercise to the back of the queue — its machine is busy —
+   * and opens the one that was next. The exercise is deferred, never skipped.
+   * Takes no body: the exercise to defer is the one the session's cursor names.
+   */
+  @Post('defer')
   @HttpCode(200)
-  async reorder(
-    @Body() body: unknown,
-    @Req() req: Request,
-  ): Promise<{ workout: WorkoutState }> {
+  async defer(@Req() req: Request): Promise<{ workout: WorkoutState }> {
     const user = await this.currentUser(req);
-    const { position } = validateReorderDto(body);
-    return {
-      workout: await this.workoutService.reorderExercise(user.id, position),
-    };
+    return { workout: await this.workoutService.deferExercise(user.id) };
   }
 
   /** Abandons the unfinished workout so a new one can be started. */

@@ -461,37 +461,19 @@
   cursor: default;
 }
 
-/* ── Reorder dialog ─────────────────────────────────────────────────────────
-   One row per upcoming exercise, each a full-width tap target. */
-.reorder-list {
-  list-style: none;
-  margin: 0.75rem 0 1rem;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  /* Long training days scroll rather than pushing Cancel off the screen. */
-  max-height: 50vh;
-  overflow-y: auto;
-}
-
-.reorder-option {
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 3.25rem;
-  padding: 0.75rem 1rem;
-  font-size: 1rem;
-  text-align: left;
+/* Informational: exercises pushed to the back of the queue, still to be done.
+   fit-content keeps the pill tight around its text and hard left, against the
+   centred text of .app. */
+.workout-deferred {
+  width: fit-content;
+  margin: -0.75rem 0 1.25rem;
+  padding: 0.25rem 0.6rem;
   border: 1px solid #333;
-  border-radius: 12px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-
-.reorder-option:disabled {
-  opacity: 0.6;
-  cursor: default;
+  border-radius: 999px;
+  color: #888;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 /* Quiet, and far below the primary action: reachable, not hit by accident. */
