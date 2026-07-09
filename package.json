@@ -1,6 +1,6 @@
 {
   "name": "gymhelper",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "The ultimate personal gym helper — React frontend + NestJS backend.",
   "scripts": {
@@ -11,7 +11,7 @@
     "dev:backend": "npm --prefix backend run start:dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "build": "npm --prefix backend run build && npm --prefix frontend run build",
-    "test": "npm --prefix backend test"
+    "test": "npm --prefix backend test && npm --prefix frontend test"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

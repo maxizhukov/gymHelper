@@ -15,6 +15,7 @@ import {
   nextUp,
   restRemainingSeconds,
   saveDraft,
+  showMachineBusyButton,
   startNextSet,
   useTicker,
   useWorkout,
@@ -295,7 +296,7 @@ function ActiveWorkout({
           </Button>
 
           {/* Only before the first set lands: after that the order is fixed. */}
-          {workout.canDefer && (
+          {showMachineBusyButton(workout) && (
             <Button
               type="button"
               className="workout-secondary"

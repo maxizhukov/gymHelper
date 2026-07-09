@@ -77,39 +77,9 @@ export interface WorkoutExercise {
   name: string;
   /** True once the user has pushed this one back at least once. */
   deferred: boolean;
-}
-
-/**
- * Whether the exercise under the cursor may be pushed back a place — the rule
- * behind the "Machine busy — do this later" button.
- *
- * It is stated per *exercise*, never per workout: `currentExerciseSets` counts
- * only the sets logged against the exercise the cursor names, so the answer
- * resets to true at the start of every exercise and goes false as soon as that
- * exercise's first set lands. A whole-workout count here would light the button
- * on the first exercise only, which is the bug this function exists to make
- * unrepresentable.
- *
- * Pure, and exported, so the rule can be exhaustively tested without a database
- * standing behind it — `buildState` supplies the counts, and `deferExercise`
- * re-checks the same conditions against the database, because the client is
- * untrusted.
- */
-export function canDeferExercise(cursor: {
-  phase: WorkoutPhase;
-  /** Sets logged against the current exercise — not against the workout. */
-  currentExerciseSets: number;
-  exercisePosition: number;
-  exerciseCount: number;
-}): boolean {
-  return (
-    // Resting is not a moment to reorder the queue.
-    cursor.phase === 'set' &&
-    // Untouched: you finish what you started.
-    cursor.currentExerciseSets === 0 &&
-    // The last exercise has nothing that could be done before it.
-    cursor.exercisePosition < cursor.exerciseCount - 1
-  );
+  /** Sets logged against this exercise — counted by identity, so a reordered
+   *  queue never moves a set from one exercise to another. */
+  completedSets: number;
 }
 
 /**
@@ -135,13 +105,6 @@ export interface WorkoutState {
   exerciseCount: number;
   exerciseName: string;
 
-  /**
-   * Whether the current exercise may be pushed back a place: it has to be
-   * untouched (no sets logged), not resting, and not already last — there is
-   * nothing to do first if it is. The client uses this to show the button;
-   * `deferExercise` re-checks it, because the client is untrusted.
-   */
-  canDefer: boolean;
   /** Deferred exercises still waiting later in the queue. Informational. */
   deferredCount: number;
 
@@ -1046,22 +1009,15 @@ export class WorkoutService implements OnModuleInit {
       }
 
       const cursor = session.exercise_position;
-      const exerciseCount = await this.countExercises(client, session.id);
-
-      // Nothing to do first: deferring the last exercise would just re-present
-      // it. Fail rather than pretend the tap did something.
-      if (cursor >= exerciseCount - 1) {
-        throw new BadRequestException(
-          'This is the last exercise — there is nothing to do before it.',
-        );
-      }
-
       const deferredExerciseId = await this.exerciseIdAt(
         run,
         session.id,
         cursor,
       );
 
+      // The rule the button is drawn from, re-checked against the database
+      // because the client is untrusted: an exercise with a set on it is
+      // underway, and you finish what you started.
       const logged = await client.query(
         'SELECT 1 FROM workout_sets WHERE workout_session_id = $1 AND exercise_id = $2 LIMIT 1',
         [session.id, deferredExerciseId],
@@ -1069,6 +1025,16 @@ export class WorkoutService implements OnModuleInit {
       if (logged.rowCount) {
         throw new BadRequestException(
           'This exercise is already underway — finish it before deferring.',
+        );
+      }
+
+      // Nothing to do first: deferring the last exercise would just re-present
+      // it, and the rotation below has no target to hop. Fail rather than
+      // pretend the tap did something.
+      const exerciseCount = await this.countExercises(client, session.id);
+      if (cursor >= exerciseCount - 1) {
+        throw new BadRequestException(
+          'This is the last exercise — there is nothing to do before it.',
         );
       }
 
@@ -1256,22 +1222,32 @@ export class WorkoutService implements OnModuleInit {
   ): Promise<WorkoutState> {
     const run = this.runner(client);
 
+    // `completed_sets` is counted per exercise identity rather than per cursor
+    // position, so it survives a reordered queue. It is what the workout screen
+    // renders the "Machine busy — do this later" button from: the button shows
+    // while the current exercise has none. Sent as data, not as a decision —
+    // `deferExercise` re-checks the database, because the client is untrusted.
     const exercisesResult = await run<{
       id: number;
       position: number;
       name: string;
       deferred_at: Date | null;
+      completed_sets: number;
     }>(
-      `SELECT id, position, name, deferred_at
-         FROM workout_session_exercises
-        WHERE session_id = $1
-        ORDER BY position`,
+      `SELECT e.id, e.position, e.name, e.deferred_at,
+              count(ws.id)::int AS completed_sets
+         FROM workout_session_exercises e
+         LEFT JOIN workout_sets ws ON ws.exercise_id = e.id
+        WHERE e.session_id = $1
+        GROUP BY e.id
+        ORDER BY e.position`,
       [session.id],
     );
     const exercises: WorkoutExercise[] = exercisesResult.rows.map((row) => ({
       position: row.position,
       name: row.name,
       deferred: row.deferred_at !== null,
+      completedSets: row.completed_sets,
     }));
 
     // Rows come back ordered by position, so the cursor indexes them directly.
@@ -1284,21 +1260,16 @@ export class WorkoutService implements OnModuleInit {
     const totalsResult = await run<{
       sets_completed: string;
       exercises_completed: string;
-      current_exercise_sets: string;
     }>(
       `SELECT count(*) AS sets_completed,
-              count(DISTINCT exercise_id) AS exercises_completed,
-              count(*) FILTER (WHERE exercise_id = $2) AS current_exercise_sets
+              count(DISTINCT exercise_id) AS exercises_completed
          FROM workout_sets
         WHERE workout_session_id = $1`,
-      [session.id, currentExerciseId],
+      [session.id],
     );
     const setsCompleted = Number(totalsResult.rows[0]?.sets_completed ?? 0);
     const exercisesCompleted = Number(
       totalsResult.rows[0]?.exercises_completed ?? 0,
-    );
-    const currentExerciseSets = Number(
-      totalsResult.rows[0]?.current_exercise_sets ?? 0,
     );
 
     const completed = session.completed_at !== null;
@@ -1327,15 +1298,6 @@ export class WorkoutService implements OnModuleInit {
       : resting
         ? 'rest'
         : 'set';
-
-    // Mirrors the guards in `deferExercise`. The button is hidden when this is
-    // false; the endpoint refuses anyway, since the client is untrusted.
-    const canDefer = canDeferExercise({
-      phase,
-      currentExerciseSets,
-      exercisePosition: session.exercise_position,
-      exerciseCount: exercises.length,
-    });
 
     // Only the ones still waiting: once the cursor reaches a deferred exercise
     // it is no longer pending, it is the exercise being done.
@@ -1369,7 +1331,6 @@ export class WorkoutService implements OnModuleInit {
       exerciseIndex: session.exercise_position,
       exerciseCount: exercises.length,
       exerciseName,
-      canDefer,
       deferredCount,
       setNumber: session.set_number,
       setsPerExercise: session.sets_per_exercise,

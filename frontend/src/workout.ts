@@ -19,6 +19,9 @@ export type WorkoutExercise = {
   name: string
   /** True once the user has pushed this one back at least once. */
   deferred: boolean
+  /** Sets logged against this exercise, counted by identity — so it reads zero
+   *  again for an exercise that has not been started, wherever it sits now. */
+  completedSets: number
 }
 
 export type WorkoutState = {
@@ -38,8 +41,6 @@ export type WorkoutState = {
   exerciseCount: number
   exerciseName: string
 
-  /** Whether the current exercise may be pushed to the back of the queue. */
-  canDefer: boolean
   /** Deferred exercises still waiting later in the queue. Informational. */
   deferredCount: number
 
@@ -119,6 +120,24 @@ export function finishSet(weight: number, reps: number): Promise<AnchoredWorkout
 /** Ends rest and advances to the next set or exercise. */
 export function startNextSet(): Promise<AnchoredWorkout> {
   return post('next')
+}
+
+/**
+ * Whether to offer "Machine busy — do this later". One rule, and only one: the
+ * current exercise has no sets on it yet. It therefore comes back at the start
+ * of every exercise, including one returning from an earlier defer, and goes
+ * away the moment that exercise's first set lands.
+ *
+ * Decided here rather than by the server: the screen already holds the current
+ * exercise and its set count, so a server flag would only be a second opinion
+ * about data the client already has. The server still validates the defer
+ * itself — visibility is a rendering question, permission is not.
+ *
+ * A missing current exercise (a completed workout indexes past the queue) reads
+ * as "no button", which is the safe way to be wrong.
+ */
+export function showMachineBusyButton(workout: WorkoutState): boolean {
+  return workout.exercises[workout.exerciseIndex]?.completedSets === 0
 }
 
 /**
