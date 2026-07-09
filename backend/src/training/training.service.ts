@@ -54,7 +54,27 @@ const TRAINING_DAY_SEED: TrainingDayDetail[] = [
     slug: 'wednesday',
     day: 'Wednesday',
     focus: 'Спина и бицепс',
-    exerciseGroups: [],
+    exerciseGroups: [
+      [
+        'Гиперэкстензия',
+        'Становая тяга',
+        'Подтягивания',
+        'Тяга горизонтального блока',
+        'Тяга гантелей горизонтальная',
+      ],
+      [
+        'Тренажер на бицепс',
+        'Сгибание с гантелями',
+        'Сгибание с гантелями сидя с упором на колено',
+      ],
+      [
+        'Тренажер на основной пресс',
+        'Наклоны с гантелями на боковой пресс',
+        'Сгибание с верхнего блока на основной пресс',
+        'Тренажер на боковой пресс',
+        'Поднятие ног на стойке',
+      ],
+    ],
   },
   {
     slug: 'friday',
@@ -126,28 +146,39 @@ export class TrainingService implements OnModuleInit {
   }
 
   /**
-   * Writes the initial plan, but only when no training days exist yet. Skipping
-   * a non-empty table keeps later edits (a removed exercise, a renamed focus)
-   * from being silently resurrected on the next restart.
+   * Writes the initial plan. A day that already exists keeps its row, and a day
+   * that already has exercises is left untouched — so later edits (a removed
+   * exercise, a renamed focus) are never silently resurrected. Only a day with
+   * no exercises at all gets seeded, which is what lets a day planned after the
+   * first boot reach a database that was seeded earlier.
    */
   private async seedTrainingDays(): Promise<void> {
-    const existing = await this.db.query('SELECT 1 FROM training_days LIMIT 1');
-    if ((existing.rowCount ?? 0) > 0) {
-      return;
-    }
-
     for (const [sortOrder, seed] of TRAINING_DAY_SEED.entries()) {
-      const inserted = await this.db.query<{ id: number }>(
+      const upserted = await this.db.query<{ id: number }>(
         `INSERT INTO training_days (slug, day, focus, sort_order)
          VALUES ($1, $2, $3, $4)
-         ON CONFLICT (slug) DO NOTHING
+         ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
          RETURNING id`,
         [seed.slug, seed.day, seed.focus, sortOrder],
       );
 
-      // Another instance seeded this day first; leave its exercises alone.
-      const dayId = inserted.rows[0]?.id;
+      // The no-op UPDATE above always returns the row, but guard anyway rather
+      // than assume — a missing id here would mean a corrupt insert.
+      const dayId = upserted.rows[0]?.id;
       if (dayId === undefined) {
+        this.logger.warn(`Could not resolve training day '${seed.slug}'.`);
+        continue;
+      }
+
+      if (seed.exerciseGroups.length === 0) {
+        continue;
+      }
+
+      const existing = await this.db.query(
+        'SELECT 1 FROM exercises WHERE training_day_id = $1 LIMIT 1',
+        [dayId],
+      );
+      if ((existing.rowCount ?? 0) > 0) {
         continue;
       }
 
@@ -161,8 +192,8 @@ export class TrainingService implements OnModuleInit {
           );
         }
       }
+      this.logger.log(`Seeded exercises for '${seed.slug}'.`);
     }
-    this.logger.log(`Seeded ${TRAINING_DAY_SEED.length} training days.`);
   }
 
   /** All training days in plan order, without their exercises. */
