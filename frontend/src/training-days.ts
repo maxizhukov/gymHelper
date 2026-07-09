@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { errorMessage, isAbort, type Loadable } from './api'
 
 /**
  * Data access for the training plan. The plan lives in the database and is
@@ -23,27 +24,7 @@ export type TrainingDay = TrainingDaySummary & {
   exerciseGroups: string[][]
 }
 
-/** What a page needs to render: still loading, failed, missing, or here. */
-export type Loadable<T> =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'not-found' }
-  | { status: 'ready'; data: T }
-
 const GENERIC_ERROR = 'Could not load the training plan. Please try again.'
-
-/** Reads the error message the API sends, falling back to a generic one. */
-async function errorMessage(res: Response): Promise<string> {
-  const data = (await res.json().catch(() => null)) as {
-    message?: string
-  } | null
-  return data?.message ?? GENERIC_ERROR
-}
-
-/** An aborted fetch is a unmount, not a failure — the caller ignores it. */
-function isAbort(err: unknown): boolean {
-  return err instanceof DOMException && err.name === 'AbortError'
-}
 
 /** The training days, fetched from the backend on mount. */
 export function useTrainingDays(): Loadable<TrainingDaySummary[]> {
@@ -61,7 +42,10 @@ export function useTrainingDays(): Loadable<TrainingDaySummary[]> {
           signal: controller.signal,
         })
         if (!res.ok) {
-          setState({ status: 'error', message: await errorMessage(res) })
+          setState({
+            status: 'error',
+            message: await errorMessage(res, GENERIC_ERROR),
+          })
           return
         }
         const data = (await res.json()) as { days: TrainingDaySummary[] }
@@ -104,7 +88,10 @@ export function useTrainingDay(slug: string | undefined): Loadable<TrainingDay> 
           return
         }
         if (!res.ok) {
-          setState({ status: 'error', message: await errorMessage(res) })
+          setState({
+            status: 'error',
+            message: await errorMessage(res, GENERIC_ERROR),
+          })
           return
         }
         const data = (await res.json()) as { day: TrainingDay }
