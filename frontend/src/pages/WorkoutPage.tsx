@@ -302,7 +302,7 @@ function ActiveWorkout({
               onValueChange={changeWeight}
               min={0}
               max={1000}
-              step={2.5}
+              step={0.5}
               disabled={busy}
             >
               <NumberField.Group className="number-field-group">
@@ -312,7 +312,7 @@ function ActiveWorkout({
                 >
                   −
                 </NumberField.Decrement>
-                <NumberField.Input />
+                <NumberField.Input inputMode="decimal" />
                 <NumberField.Increment
                   className="number-field-button"
                   aria-label="Increase weight"
@@ -540,7 +540,7 @@ function FinishSetDialog({
                 onValueChange={onWeightChange}
                 min={0}
                 max={1000}
-                step={2.5}
+                step={0.5}
                 required
               >
                 <NumberField.Group className="number-field-group">
@@ -550,7 +550,7 @@ function FinishSetDialog({
                   >
                     −
                   </NumberField.Decrement>
-                  <NumberField.Input autoFocus />
+                  <NumberField.Input autoFocus inputMode="decimal" />
                   <NumberField.Increment
                     className="number-field-button"
                     aria-label="Increase weight"
