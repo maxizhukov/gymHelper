@@ -1,122 +1,64 @@
-# GymHelper — Project Rules
+# Claude Code Rules for gymHelper
 
-The ultimate personal gym helper: a **web app + backend**, developed in the open as a
-**public GitHub repository** (`git@github.com:maxizhukov/gymHelper.git`).
+## Main goal
 
-Because the repo is public, treat every commit as world-readable and permanent.
-These rules are binding for all work in this repo.
+Act like a focused production developer for this app. Make small, direct changes that solve the user's requested issue.
 
----
+## Hard rules
 
-## 1. Security — no secrets, ever
+- Do not run `npm run lint`.
+- Do not run `eslint`.
+- Do not run `eslint --fix`.
+- Do not run broad formatting or cleanup commands.
+- Do not refactor unrelated code.
+- Do not run long audits unless explicitly requested.
+- Do not touch `.env`, secrets, SSH keys, private keys, tokens, or deployment credentials.
+- Do not delete unrelated files.
+- Do not reset, clean, or stash user work unless explicitly requested.
+- Do not commit or push. The wrapper script handles commit and push.
 
-This is the highest-priority rule. A public repo means anything committed is
-public forever, even if later deleted (it stays in git history and on forks/mirrors).
+## Allowed validation
 
-**Never commit:**
-- API keys, tokens, passwords, connection strings, private keys, certificates
-- `.env` files or any file with real credentials
-- OAuth client secrets, JWT signing secrets, session secrets
-- Database dumps, backups, or anything with real user data (PII)
-- Cloud provider credentials (AWS, GCP, Azure), service-account JSON files
+Use only fast, relevant checks:
 
-**Always do instead:**
-- Read secrets from environment variables (`process.env.X` / equivalent) at runtime.
-- Keep a committed `.env.example` with **placeholder** values documenting every
-  required variable — never real values.
-- Real secrets live only in a local, git-ignored `.env` and in the deploy platform's
-  secret store.
-- If a secret is ever committed by accident: **rotate/revoke it immediately** — do not
-  assume deleting the file is enough. Then tell the user.
+- `npm run build`
+- targeted TypeScript checks if needed
+- targeted grep/read commands
+- targeted tests only if the user explicitly asks
 
-**Before every commit:** scan the staged diff for anything that looks like a
-credential. If unsure whether something is sensitive, ask before committing.
+## Data persistence rules
 
-## 2. Git workflow
+All production app data must live in PostgreSQL.
 
-- Do **not** commit or push unless the user explicitly asks.
-- Never force-push to `main` or rewrite shared history without explicit approval.
-- Write clear, conventional commit messages describing the *why*.
-- Keep commits focused and reviewable.
+This includes:
+- training plans/config
+- workout sessions
+- exercise order
+- current exercise cursor/state
+- completed sets
+- reps
+- weight
+- timestamps
+- rest/timing data
+- body weight linked to workout sessions
+- defer/machine-busy reorder state
 
-## 3. Code quality
+Do not store workout/training/set/timing source-of-truth data in:
+- localStorage
+- sessionStorage
+- indexedDB
+- browser cache
+- backend memory
+- JSON/static files
 
-- Match the existing style and conventions of the file being edited.
-- Prefer clear, readable code over cleverness. No dead code or leftover debug logs.
-- Validate and sanitize all external input (this is a web app — assume hostile input).
-- Handle errors explicitly; don't swallow exceptions silently.
-- No hardcoded config that varies by environment — use env vars / config files.
+Frontend state is only temporary UI state loaded from the backend API.
 
-## 4. Design — mobile first
+## Implementation style
 
-- Design and build **mobile first**: base styles target small screens; layer on
-  larger layouts with `min-width` media queries, not the other way around.
-- Use responsive units and fluid layouts; avoid fixed widths that break on phones.
-- Keep tap targets comfortably sized and keep form inputs at ≥16px font so mobile
-  browsers don't auto-zoom on focus.
-- Verify the UI works at a narrow viewport before widening it.
-
-## 5. UI — Base UI only, no emojis
-
-- **Base UI (`@base-ui/react`) is the only UI component library.** Build every
-  interactive control from its primitives — `Button`, `Form`, `Field`, `Input`,
-  `Separator`, `Dialog`, `Select`, etc. Do not add a second component library
-  (MUI, Radix, shadcn, Chakra, Headless UI, …) and do not hand-roll a control that
-  Base UI already provides.
-- Base UI ships behaviour and accessibility, not styles. Styling stays ours: plain
-  CSS in `App.css` / `index.css`, still **mobile first** (see §4).
-- Prefer the semantic parts over raw elements: `<Field.Root>` + `<Field.Label>` +
-  `<Input>` + `<Field.Error>` instead of a bare `<label>` / `<input>`, and `<Button>`
-  instead of `<button>`. This is what keeps labelling, `aria-*` wiring, validity
-  state, and disabled/focus handling correct for free.
-- Note the package rename: the current package is **`@base-ui/react`**. The old
-  `@base-ui-components/react` is deprecated — never install it.
-- **No emojis anywhere in the UI** — no emoji in copy, labels, buttons, headings, or
-  as icons. Emoji render inconsistently across platforms, read badly to screen
-  readers, and are not a substitute for a real icon. Use plain text labels; if an
-  icon is genuinely needed, use an inline SVG with a proper accessible name.
-
-## 6. Web + backend specifics
-
-- **Input validation** on every API endpoint and form.
-- **AuthN/AuthZ**: never trust the client; enforce permissions server-side.
-- Use parameterized queries / an ORM — never string-concatenate SQL.
-- Set security headers, CORS, and rate limiting deliberately, not by copy-paste.
-- Don't log secrets, tokens, or full PII.
-
-## 7. Working style
-
-- When the stack/framework choices are still open, ask before locking one in.
-- Keep dependencies minimal and justified; each new dependency is a maintenance and
-  supply-chain cost on a public repo.
-- Explain trade-offs briefly and give a recommendation rather than a survey.
-
-## 8. Production-ready, secure by default
-
-Write every change as if it ships to production today — not as a prototype to be
-hardened "later." Later rarely comes, and this is a public repo serving real users.
-
-- **Authentication uses server-side sessions.** The server is the source of truth
-  for who is signed in: on login, create a session and return an opaque,
-  high-entropy token in an **HttpOnly, `SameSite`, `Secure`-in-production cookie**.
-  Never keep identity or trust decisions in client storage (`localStorage`, a
-  client-sent username) — the client is untrusted. Store only a **hash** of the
-  session token at rest, set an expiry, and invalidate sessions on logout and on
-  password change.
-- **Derive the acting user from the session, never from the request body.** An
-  endpoint must act on the authenticated principal, not on an id/username the client
-  supplies — otherwise one user can act as another.
-- **Secure defaults, not afterthoughts:** validate and sanitize all input, enforce
-  authZ server-side, parameterized queries only, deliberate CORS/headers/rate limits,
-  constant-time comparisons for secrets, and no secrets or full PII in logs.
-- **Fail safe:** on any doubt (missing session, malformed input, unreachable
-  dependency) deny the request rather than falling through to a permissive path.
-- **Handle every error path**, including the ones "that can't happen." Don't swallow
-  exceptions; surface actionable errors without leaking internals to the client.
-- Prefer Node/framework built-ins and well-vetted primitives for security-sensitive
-  code; when you must hand-roll (to avoid a dependency), follow the established
-  pattern in this repo and keep it auditable.
-
----
-
-_Update this file as the project's stack and conventions solidify._
+- Prefer minimal changes.
+- First inspect the relevant files.
+- Fix the actual cause.
+- Keep diffs small.
+- Preserve existing architecture.
+- Use database/server time as authoritative for workout timing.
+- Build must pass before finishing.
