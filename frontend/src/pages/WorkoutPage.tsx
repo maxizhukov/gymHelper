@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@base-ui/react/button'
+import { Collapsible } from '@base-ui/react/collapsible'
 import { Dialog } from '@base-ui/react/dialog'
 import { Field } from '@base-ui/react/field'
 import { Form } from '@base-ui/react/form'
@@ -12,16 +13,31 @@ import {
   elapsedSeconds,
   finishSet,
   formatDuration,
+  formatRelativeDay,
+  formatSetWeights,
+  formatShortDate,
+  formatWeight,
+  improvementOverLast,
   nextUp,
   restRemainingSeconds,
   saveDraft,
   showMachineBusyButton,
   showMachineBusyButtonDuringRest,
   startNextSet,
+  useExerciseHistory,
   useTicker,
   useWorkout,
   type AnchoredWorkout,
+  type ExerciseHistory,
+  type Improvement,
 } from '../workout'
+
+/** What the green marker says when today's numbers beat last time's. */
+const IMPROVEMENT_LABEL: Record<Exclude<Improvement, 'none'>, string> = {
+  weight: 'Heavier than last time',
+  reps: 'More reps than last time',
+  both: 'Heavier and more reps',
+}
 
 /**
  * How long to wait after a keystroke before writing the draft. Long enough not
@@ -266,6 +282,15 @@ function ActiveWorkout({
             </div>
           </div>
 
+          {/* Collapsed by default: it answers "what weight today?" in one tap,
+              and costs no vertical space until it is asked. */}
+          <PreviousPerformance
+            exerciseName={workout.exerciseName}
+            setNumber={workout.setNumber}
+            weight={weight}
+            reps={reps}
+          />
+
           <Field.Root name="weight" className="field workout-weight">
             <Field.Label>Weight (kg)</Field.Label>
             <NumberField.Root
@@ -343,6 +368,135 @@ function ActiveWorkout({
         Discard workout
       </Button>
     </main>
+  )
+}
+
+/**
+ * What this exercise was last lifted at, inline and collapsed. Expanding it
+ * navigates nowhere and opens nothing — the workout screen stays exactly where
+ * it was, one tap away from the numbers that decide today's weight.
+ *
+ * Only this exercise's history is fetched, and only when the exercise changes.
+ * The header carries the one fact worth reading without expanding — how long
+ * ago the last session was — plus the green marker when today already beats it.
+ */
+function PreviousPerformance({
+  exerciseName,
+  setNumber,
+  weight,
+  reps,
+}: {
+  exerciseName: string
+  setNumber: number
+  weight: number | null
+  reps: number | null
+}) {
+  const state = useExerciseHistory(exerciseName)
+  const history = state.status === 'ready' ? state.data : null
+  const improvement = improvementOverLast(
+    history?.last ?? null,
+    setNumber,
+    weight,
+    reps,
+  )
+
+  return (
+    <Collapsible.Root className="history">
+      <Collapsible.Trigger className="history-trigger">
+        {/* Drawn in CSS, rotated when open: an icon, so it is hidden from
+            screen readers — the trigger already announces its expanded state. */}
+        <span className="history-chevron" aria-hidden="true" />
+        <span className="history-title">Previous Performance</span>
+        <span className="history-note">{headerNote(state)}</span>
+      </Collapsible.Trigger>
+
+      {improvement !== 'none' && (
+        <p className="history-improvement">{IMPROVEMENT_LABEL[improvement]}</p>
+      )}
+
+      <Collapsible.Panel className="history-panel">
+        {state.status === 'loading' && <p className="history-note">Loading…</p>}
+        {state.status === 'error' && (
+          <p className="error" role="alert">
+            {state.message}
+          </p>
+        )}
+        {history && !history.last && (
+          <p className="history-note">
+            No completed workouts yet for this exercise.
+          </p>
+        )}
+        {history?.last && <HistoryDetail history={history} last={history.last} />}
+      </Collapsible.Panel>
+    </Collapsible.Root>
+  )
+}
+
+/** The header line, readable without expanding: when this lift was last done. */
+function headerNote(state: ReturnType<typeof useExerciseHistory>): string {
+  if (state.status === 'loading') return 'Loading…'
+  if (state.status === 'error') return 'Unavailable'
+  if (state.status === 'not-found' || !state.data.last) return 'No history'
+  return formatRelativeDay(state.data.last.completedAt)
+}
+
+/**
+ * Last workout in full, then the two summaries. Ordered by how much of the
+ * decision each one carries: the last session's sets are what today's weight is
+ * chosen against, and everything below it is context.
+ */
+function HistoryDetail({
+  history,
+  last,
+}: {
+  history: ExerciseHistory
+  last: NonNullable<ExerciseHistory['last']>
+}) {
+  return (
+    <>
+      <section className="history-section">
+        <p className="history-heading">
+          Last workout
+          <span className="history-note">
+            {formatRelativeDay(last.completedAt)}
+          </span>
+        </p>
+        <dl className="history-sets">
+          {last.sets.map((set) => (
+            <div key={set.setNumber} className="history-row">
+              <dt>Set {set.setNumber}</dt>
+              <dd>
+                {formatWeight(set.weight)} kg × {set.reps}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      {history.best && (
+        <section className="history-section">
+          <p className="history-heading">Best weight</p>
+          <p className="history-best">
+            {formatWeight(history.best.weight)} kg × {history.best.reps}
+          </p>
+        </section>
+      )}
+
+      {/* Weights only, one row per workout: enough to read a trend at a glance. */}
+      {history.recent.length > 1 && (
+        <section className="history-section">
+          <p className="history-heading">Recent history</p>
+          <dl className="history-sets">
+            {history.recent.map((workout) => (
+              <div key={workout.workoutId} className="history-row">
+                <dt>{formatShortDate(workout.completedAt)}</dt>
+                <dd>{formatSetWeights(workout.sets)}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
+    </>
   )
 }
 

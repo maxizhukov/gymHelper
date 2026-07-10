@@ -58,6 +58,9 @@ export const REPS_MAX = 100;
 /** Postgres error code for a unique-constraint violation. */
 const UNIQUE_VIOLATION = '23505';
 
+/** How many past workouts the Previous Performance panel lists. */
+const HISTORY_WORKOUTS = 5;
+
 /** What the user did, in order. Append-only; never updated or deleted. */
 export type WorkoutEventKind =
   | 'workout_started'
@@ -126,6 +129,34 @@ export interface WorkoutState {
 
   setsCompleted: number;
   exercisesCompleted: number;
+}
+
+/** One logged set of a past workout. */
+export interface HistorySet {
+  setNumber: number;
+  weight: number;
+  reps: number;
+}
+
+/** One past workout's worth of sets for a single exercise, newest first. */
+export interface HistoryWorkout {
+  workoutId: number;
+  completedAt: string;
+  sets: HistorySet[];
+}
+
+/**
+ * What the Previous Performance panel renders for one exercise. Computed here
+ * so the client never has to hold — or page through — the full set history.
+ */
+export interface ExerciseHistory {
+  exerciseName: string;
+  /** The most recent completed workout, also `recent[0]` when present. */
+  last: HistoryWorkout | null;
+  /** Up to five completed workouts, newest first. */
+  recent: HistoryWorkout[];
+  /** The heaviest set ever logged, best reps breaking a tie. */
+  best: { weight: number; reps: number } | null;
 }
 
 interface SessionRow {
@@ -326,6 +357,11 @@ export class WorkoutService implements OnModuleInit {
     // sets by exercise, never by position.
     await this.db.query(
       'CREATE INDEX IF NOT EXISTS workout_sets_exercise_id_idx ON workout_sets (exercise_id)',
+    );
+    // Exercises are the same lift across workouts when they share a name — that
+    // is how the prefill and the Previous Performance panel find their history.
+    await this.db.query(
+      'CREATE INDEX IF NOT EXISTS workout_session_exercises_name_idx ON workout_session_exercises (name)',
     );
     await this.db.query(
       'CREATE INDEX IF NOT EXISTS workout_events_session_id_idx ON workout_events (session_id)',
@@ -629,6 +665,106 @@ export class WorkoutService implements OnModuleInit {
     );
     const session = result.rows[0];
     return session ? this.buildState(session) : null;
+  }
+
+  /**
+   * What the user last did on one exercise: the previous completed workout, the
+   * five most recent, and their heaviest set ever. Read while a workout is on,
+   * so it is deliberately one round trip for one exercise — never the whole
+   * plan's history — and it aggregates in the database rather than shipping
+   * every set to the client to fold there.
+   *
+   * "The same exercise" means the same snapshotted name, which is what
+   * `resolvePrefill` already means by it: renaming a lift starts its history
+   * fresh rather than inheriting a stranger's numbers.
+   *
+   * Only completed workouts count. The workout in progress is excluded because
+   * it has no `completed_at` — so the panel keeps showing what to beat, rather
+   * than the sets just logged against it.
+   */
+  async getExerciseHistory(
+    userId: number,
+    exerciseName: string,
+  ): Promise<ExerciseHistory> {
+    // The most recent completed workouts that logged a set on this exercise.
+    // Bounded here, so everything below reads at most five workouts of sets.
+    const workoutsResult = await this.db.query<{
+      id: number;
+      completed_at: Date;
+    }>(
+      `SELECT s.id, s.completed_at
+         FROM workout_sessions s
+        WHERE s.user_id = $1
+          AND s.completed_at IS NOT NULL
+          AND EXISTS (
+                SELECT 1
+                  FROM workout_session_exercises e
+                  JOIN workout_sets ws ON ws.exercise_id = e.id
+                 WHERE e.session_id = s.id AND e.name = $2
+              )
+        ORDER BY s.completed_at DESC
+        LIMIT $3`,
+      [userId, exerciseName, HISTORY_WORKOUTS],
+    );
+    const workouts = workoutsResult.rows;
+
+    if (workouts.length === 0) {
+      return { exerciseName, last: null, recent: [], best: null };
+    }
+
+    const setsResult = await this.db.query<{
+      workout_session_id: number;
+      set_number: number;
+      weight: number;
+      reps: number;
+    }>(
+      `SELECT ws.workout_session_id, ws.set_number,
+              ws.actual_weight::float8 AS weight, ws.actual_reps AS reps
+         FROM workout_sets ws
+         JOIN workout_session_exercises e ON e.id = ws.exercise_id
+        WHERE ws.workout_session_id = ANY($1::int[]) AND e.name = $2
+        ORDER BY ws.workout_session_id, ws.set_number`,
+      [workouts.map((workout) => workout.id), exerciseName],
+    );
+
+    const setsByWorkout = new Map<number, HistorySet[]>();
+    for (const row of setsResult.rows) {
+      const sets = setsByWorkout.get(row.workout_session_id) ?? [];
+      sets.push({
+        setNumber: row.set_number,
+        weight: row.weight,
+        reps: row.reps,
+      });
+      setsByWorkout.set(row.workout_session_id, sets);
+    }
+
+    // Ordered by the workout query, so the list stays newest-first.
+    const recent: HistoryWorkout[] = workouts.map((workout) => ({
+      workoutId: workout.id,
+      completedAt: workout.completed_at.toISOString(),
+      sets: setsByWorkout.get(workout.id) ?? [],
+    }));
+
+    // Best ever, over every completed workout rather than the five above: a
+    // personal best is not something that scrolls off the end of a list.
+    const bestResult = await this.db.query<{ weight: number; reps: number }>(
+      `SELECT ws.actual_weight::float8 AS weight, ws.actual_reps AS reps
+         FROM workout_sets ws
+         JOIN workout_session_exercises e ON e.id = ws.exercise_id
+         JOIN workout_sessions s ON s.id = ws.workout_session_id
+        WHERE s.user_id = $1 AND e.name = $2 AND s.completed_at IS NOT NULL
+        ORDER BY ws.actual_weight DESC, ws.actual_reps DESC
+        LIMIT 1`,
+      [userId, exerciseName],
+    );
+    const bestRow = bestResult.rows[0];
+
+    return {
+      exerciseName,
+      last: recent[0] ?? null,
+      recent,
+      best: bestRow ? { weight: bestRow.weight, reps: bestRow.reps } : null,
+    };
   }
 
   /**

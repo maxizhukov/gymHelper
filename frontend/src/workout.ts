@@ -59,6 +59,31 @@ export type WorkoutState = {
   exercisesCompleted: number
 }
 
+/** One logged set of a past workout. */
+export type HistorySet = {
+  setNumber: number
+  weight: number
+  reps: number
+}
+
+/** One past workout's worth of sets for a single exercise. */
+export type HistoryWorkout = {
+  workoutId: number
+  completedAt: string
+  sets: HistorySet[]
+}
+
+/** What the Previous Performance panel renders. Aggregated by the server. */
+export type ExerciseHistory = {
+  exerciseName: string
+  /** The most recent completed workout, also `recent[0]` when present. */
+  last: HistoryWorkout | null
+  /** Up to five completed workouts, newest first. */
+  recent: HistoryWorkout[]
+  /** The heaviest set ever logged, best reps breaking a tie. */
+  best: { weight: number; reps: number } | null
+}
+
 /**
  * A server state together with the moment it arrived. The screen ticks its
  * timers forward from `receivedAt` rather than tracking elapsed time itself, so
@@ -71,6 +96,7 @@ export type AnchoredWorkout = {
 
 const LOAD_ERROR = 'Could not load the workout. Please try again.'
 const ACTION_ERROR = 'Could not save that. Please try again.'
+const HISTORY_ERROR = 'Could not load previous performance.'
 
 /** Anchors a freshly-received state to the local clock. */
 function anchor(workout: WorkoutState): AnchoredWorkout {
@@ -275,6 +301,145 @@ export function useWorkout(id: string | undefined): {
   }, [id])
 
   return { state, replace }
+}
+
+/**
+ * History already fetched for the signed-in user, by exercise name.
+ *
+ * The workout screen remounts on every set and every phase change, and refetching
+ * the same five workouts four times per exercise is latency the user pays for
+ * while standing at the rack. Safe to cache: the endpoint reports only *completed*
+ * workouts, and the one in progress completes on the last set of the last
+ * exercise — after which no panel is rendered. So nothing here can go stale
+ * while one user is signed in.
+ *
+ * It is keyed by exercise name and not by user, so it MUST be emptied when the
+ * signed-in user changes — otherwise the next user to sign in on this tab is
+ * served the previous one's lifting history. `clearExerciseHistoryCache` is
+ * called on login and logout for exactly that reason.
+ */
+const historyCache = new Map<string, ExerciseHistory>()
+
+/** Drops every cached exercise history. Called whenever the session changes. */
+export function clearExerciseHistoryCache(): void {
+  historyCache.clear()
+}
+
+/**
+ * The user's history on one exercise: last workout, the last five, best ever.
+ * One exercise, one request — never the whole plan — and only when the panel's
+ * exercise changes. The server does the aggregating.
+ */
+export function useExerciseHistory(
+  exerciseName: string,
+): Loadable<ExerciseHistory> {
+  const [state, setState] = useState<Loadable<ExerciseHistory>>(() => {
+    const cached = historyCache.get(exerciseName)
+    return cached ? { status: 'ready', data: cached } : { status: 'loading' }
+  })
+
+  useEffect(() => {
+    const cached = historyCache.get(exerciseName)
+    if (cached) {
+      setState({ status: 'ready', data: cached })
+      return
+    }
+
+    const controller = new AbortController()
+    setState({ status: 'loading' })
+
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/workout/history?name=${encodeURIComponent(exerciseName)}`,
+          { credentials: 'include', signal: controller.signal },
+        )
+        if (!res.ok) {
+          setState({
+            status: 'error',
+            message: await errorMessage(res, HISTORY_ERROR),
+          })
+          return
+        }
+        const data = (await res.json()) as { history: ExerciseHistory }
+        historyCache.set(exerciseName, data.history)
+        setState({ status: 'ready', data: data.history })
+      } catch (err) {
+        if (isAbort(err)) return
+        setState({ status: 'error', message: HISTORY_ERROR })
+      }
+    })()
+
+    return () => controller.abort()
+  }, [exerciseName])
+
+  return state
+}
+
+/** `72.5`, `75` — trailing zeros dropped, because a rack is not a spreadsheet. */
+export function formatWeight(kg: number): string {
+  return String(Math.round(kg * 100) / 100)
+}
+
+/** The weights of a workout's sets, in order: `75 / 75 / 70 / 70`. */
+export function formatSetWeights(sets: HistorySet[]): string {
+  return sets.map((set) => formatWeight(set.weight)).join(' / ')
+}
+
+/** `03 Jul`. Compact enough for a row label on a phone. */
+export function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    day: '2-digit',
+    month: 'short',
+  })
+}
+
+/**
+ * `Today`, `Yesterday`, `3 days ago`, and a plain date once a week has passed —
+ * past that, "23 days ago" is a number to decode rather than a fact to glance at.
+ * Counted in whole calendar days so a workout last night reads "Yesterday"
+ * rather than "0 days ago".
+ */
+export function formatRelativeDay(iso: string, now: Date = new Date()): string {
+  const midnight = (date: Date) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const then = new Date(iso)
+  const days = Math.round((midnight(now) - midnight(then)) / 86_400_000)
+
+  if (days <= 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days <= 6) return `${days} days ago`
+  return formatShortDate(iso)
+}
+
+/** How today's set compares to the same set of the last workout. */
+export type Improvement = 'none' | 'weight' | 'reps' | 'both'
+
+/**
+ * Whether what is typed beats what was lifted on this set last time.
+ *
+ * Heavier for at least the same reps is a win, and so are more reps at the same
+ * weight. Everything else — heavier but for fewer reps, more reps but lighter —
+ * is a trade rather than an improvement, and the panel says nothing about it.
+ * Claiming a win the user has not had is worse than staying quiet.
+ */
+export function improvementOverLast(
+  last: HistoryWorkout | null,
+  setNumber: number,
+  weight: number | null,
+  reps: number | null,
+): Improvement {
+  if (!last || weight === null || reps === null) return 'none'
+  const previous = last.sets.find((set) => set.setNumber === setNumber)
+  if (!previous) return 'none'
+
+  const heavier = weight > previous.weight
+  const moreReps = reps > previous.reps
+
+  if (heavier && moreReps) return 'both'
+  if (heavier && reps >= previous.reps) return 'weight'
+  if (weight === previous.weight && moreReps) return 'reps'
+  return 'none'
 }
 
 /**

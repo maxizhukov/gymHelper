@@ -1034,3 +1034,215 @@ describeDb('WorkoutService — migrating a position-keyed database', () => {
     });
   });
 });
+
+/**
+ * The Previous Performance panel's data. The whole point of the endpoint is that
+ * it aggregates in the database rather than shipping every set to the phone, so
+ * what is worth pinning down is the shape of what comes back: the last workout
+ * in full, a bounded window of recent ones, and a personal best that is *not*
+ * bounded by that window.
+ */
+describeDb('WorkoutService — exercise history', () => {
+  let db: DatabaseService;
+  let service: WorkoutService;
+  let userId: number;
+  let lifter = 0;
+
+  beforeAll(async () => {
+    await createDatabase('gymhelper_test_history');
+    db = connect('gymhelper_test_history');
+    await createDependencies(db);
+    // One exercise, so a workout is four sets and completing it is cheap.
+    await createDay(db, 'solo', ['Bench Press']);
+    await createDay(db, 'pair', ['Bench Press', 'Incline Press']);
+
+    const trainingConfig = new TrainingConfigService(db);
+    await trainingConfig.onModuleInit();
+    service = new WorkoutService(db, trainingConfig);
+    await service.ensureSchema();
+  });
+
+  afterAll(async () => {
+    await db.onModuleDestroy();
+  });
+
+  beforeEach(async () => {
+    userId = await createUser(db, `lifter-${++lifter}`);
+  });
+
+  /** Runs one workout of `day` to completion, logging the sets given. */
+  async function completeWorkout(
+    user: number,
+    sets: Array<[number, number]>,
+    day = 'solo',
+  ): Promise<void> {
+    await service.startWorkout(user, day);
+    for (const [weight, reps] of sets) {
+      const after = await service.finishSet(user, weight, reps);
+      if (after.phase === 'completed') return;
+      await service.startNextSet(user);
+    }
+  }
+
+  /** The weights of a workout's sets, in set order. */
+  const weightsOf = (workout: { sets: { weight: number }[] }): number[] =>
+    workout.sets.map((set) => set.weight);
+
+  it('returns nothing for an exercise never performed', async () => {
+    const history = await service.getExerciseHistory(userId, 'Bench Press');
+
+    expect(history).toEqual({
+      exerciseName: 'Bench Press',
+      last: null,
+      recent: [],
+      best: null,
+    });
+  });
+
+  it('returns the last completed workout, in set order', async () => {
+    await completeWorkout(userId, [
+      [75, 12],
+      [75, 12],
+      [70, 12],
+      [70, 10],
+    ]);
+
+    const history = await service.getExerciseHistory(userId, 'Bench Press');
+
+    expect(history.last?.sets).toEqual([
+      { setNumber: 1, weight: 75, reps: 12 },
+      { setNumber: 2, weight: 75, reps: 12 },
+      { setNumber: 3, weight: 70, reps: 12 },
+      { setNumber: 4, weight: 70, reps: 10 },
+    ]);
+    // `last` is the head of the same list, not a second read of the database.
+    expect(history.recent[0]).toEqual(history.last);
+  });
+
+  /**
+   * The window is five workouts, newest first — but a personal best is not
+   * something that scrolls off the end of it. Here the heaviest set ever is in
+   * the sixth-oldest workout, which `recent` must not contain and `best` must.
+   */
+  it('caps recent history at five, newest first, without capping best', async () => {
+    await completeWorkout(userId, [
+      [100, 5],
+      [100, 5],
+      [95, 5],
+      [95, 5],
+    ]);
+    for (const weight of [70, 72.5, 75, 77.5, 80]) {
+      await completeWorkout(userId, [
+        [weight, 10],
+        [weight, 10],
+        [weight, 10],
+        [weight, 10],
+      ]);
+    }
+
+    const history = await service.getExerciseHistory(userId, 'Bench Press');
+
+    expect(history.recent).toHaveLength(5);
+    expect(history.recent.map((workout) => workout.sets[0].weight)).toEqual([
+      80, 77.5, 75, 72.5, 70,
+    ]);
+    expect(weightsOf(history.last!)).toEqual([80, 80, 80, 80]);
+    // The 100 kg workout is off the end of the window, and still the best ever.
+    expect(history.best).toEqual({ weight: 100, reps: 5 });
+  });
+
+  /** Timestamps are what the frontend renders "3 days ago" from. */
+  it('stamps each workout with the moment it was completed', async () => {
+    await completeWorkout(userId, [
+      [60, 10],
+      [60, 10],
+      [60, 10],
+      [60, 10],
+    ]);
+
+    const history = await service.getExerciseHistory(userId, 'Bench Press');
+
+    expect(Date.parse(history.last!.completedAt)).not.toBeNaN();
+  });
+
+  /**
+   * A workout in progress has no `completed_at`, so the panel keeps showing what
+   * there is to beat rather than the sets just logged against the exercise the
+   * user is standing on.
+   */
+  it('ignores the workout in progress', async () => {
+    await completeWorkout(userId, [
+      [70, 10],
+      [70, 10],
+      [70, 10],
+      [70, 10],
+    ]);
+
+    await service.startWorkout(userId, 'solo');
+    await service.finishSet(userId, 200, 1);
+
+    const history = await service.getExerciseHistory(userId, 'Bench Press');
+
+    expect(history.recent).toHaveLength(1);
+    expect(weightsOf(history.last!)).toEqual([70, 70, 70, 70]);
+    // The 200 kg set is in the database, and belongs to no completed workout.
+    expect(history.best).toEqual({ weight: 70, reps: 10 });
+  });
+
+  /** An abandoned workout never completed, so it is not history either. */
+  it('ignores an abandoned workout', async () => {
+    await service.startWorkout(userId, 'solo');
+    await service.finishSet(userId, 150, 3);
+    await service.abandonWorkout(userId);
+
+    const history = await service.getExerciseHistory(userId, 'Bench Press');
+
+    expect(history.last).toBeNull();
+    expect(history.best).toBeNull();
+  });
+
+  /** Sets are joined through the exercise they were logged against, by name. */
+  it('returns only the named exercise, not the rest of the workout', async () => {
+    await completeWorkout(
+      userId,
+      [
+        [80, 8],
+        [80, 8],
+        [80, 8],
+        [80, 8],
+        [40, 12],
+        [40, 12],
+        [40, 12],
+        [40, 12],
+      ],
+      'pair',
+    );
+
+    const bench = await service.getExerciseHistory(userId, 'Bench Press');
+    const incline = await service.getExerciseHistory(userId, 'Incline Press');
+
+    expect(weightsOf(bench.last!)).toEqual([80, 80, 80, 80]);
+    expect(weightsOf(incline.last!)).toEqual([40, 40, 40, 40]);
+    // One workout, and it appears once in each exercise's history.
+    expect(bench.recent).toHaveLength(1);
+    expect(incline.recent).toHaveLength(1);
+    expect(bench.last!.workoutId).toBe(incline.last!.workoutId);
+  });
+
+  /** History is scoped to the session user. Another lifter's is not history. */
+  it('never returns what another user has lifted', async () => {
+    const stranger = await createUser(db, `stranger-${++lifter}`);
+    await completeWorkout(stranger, [
+      [200, 5],
+      [200, 5],
+      [200, 5],
+      [200, 5],
+    ]);
+
+    const history = await service.getExerciseHistory(userId, 'Bench Press');
+
+    expect(history.last).toBeNull();
+    expect(history.recent).toEqual([]);
+    expect(history.best).toBeNull();
+  });
+});

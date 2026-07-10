@@ -7,6 +7,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -15,11 +16,16 @@ import type { AuthenticatedUser } from '../auth/auth.service';
 import { readSessionToken } from '../auth/cookie.util';
 import { SessionService } from '../auth/session.service';
 import {
+  validateExerciseNameQuery,
   validateFinishSetDto,
   validateSaveDraftDto,
   validateStartWorkoutDto,
 } from './dto/workout.dto';
-import { WorkoutService, type WorkoutState } from './workout.service';
+import {
+  WorkoutService,
+  type ExerciseHistory,
+  type WorkoutState,
+} from './workout.service';
 
 // Ids come from the URL, so they are untrusted. Bound the length as well as the
 // shape: a 40-digit "integer" would survive the regex and overflow downstream.
@@ -42,6 +48,27 @@ export class WorkoutController {
   async active(@Req() req: Request): Promise<{ workout: WorkoutState | null }> {
     const user = await this.currentUser(req);
     return { workout: await this.workoutService.getActiveWorkout(user.id) };
+  }
+
+  /**
+   * What the user last did on one exercise, for the Previous Performance panel.
+   * Scoped to the session user's own workouts, so a name from the query string
+   * can only ever surface their own sets. Declared before ':id', or the
+   * parameterised route would swallow it.
+   */
+  @Get('history')
+  async history(
+    @Query('name') name: unknown,
+    @Req() req: Request,
+  ): Promise<{ history: ExerciseHistory }> {
+    const user = await this.currentUser(req);
+    const exerciseName = validateExerciseNameQuery(name);
+    return {
+      history: await this.workoutService.getExerciseHistory(
+        user.id,
+        exerciseName,
+      ),
+    };
   }
 
   /**

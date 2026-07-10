@@ -5,6 +5,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { clearExerciseHistoryCache } from '../workout'
 import { AuthContext, type AuthenticatedUser } from './auth-context'
 
 /**
@@ -54,6 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const data = (await res.json()) as { user: AuthenticatedUser }
+    // Whatever this tab cached belonged to whoever was signed in before.
+    clearExerciseHistoryCache()
     setUser(data.user)
   }, [])
 
@@ -66,6 +69,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Even if the request fails, drop local state so the UI signs out.
     }
+    // Signing out must not leave this user's history readable to the next one.
+    clearExerciseHistoryCache()
     setUser(null)
   }, [])
 

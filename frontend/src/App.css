@@ -491,6 +491,123 @@
   letter-spacing: 0.05em;
 }
 
+/* ── Previous Performance ───────────────────────────────────────────────────
+   Collapsed, it is one quiet row. Expanded, it is the only thing on the screen
+   worth reading — so the numbers get tabular figures and everything else greys
+   back. It must never push the weight input below the fold when collapsed. */
+.history {
+  border: 1px solid #333;
+  border-radius: 12px;
+}
+
+.history-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  width: 100%;
+  /* Comfortably tappable with one thumb, mid-set. */
+  min-height: 3rem;
+  padding: 0.75rem 1rem;
+  font: inherit;
+  font-size: 0.95rem;
+  text-align: left;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* A triangle, not an icon font and not an emoji: it points right when closed
+   and down when open, which is the whole of what it has to say. */
+.history-chevron {
+  flex: none;
+  width: 0;
+  height: 0;
+  border-top: 0.3rem solid transparent;
+  border-bottom: 0.3rem solid transparent;
+  border-left: 0.4rem solid #888;
+  transition: transform 150ms ease;
+}
+
+.history-trigger[data-panel-open] .history-chevron {
+  /* About its own centre, which the border triangle does not sit on. */
+  transform: translateX(-0.1rem) rotate(90deg);
+}
+
+.history-title {
+  font-weight: 600;
+}
+
+/* Pushed hard right on the trigger row; inline elsewhere. */
+.history-trigger .history-note {
+  margin-left: auto;
+}
+
+.history-note {
+  margin: 0;
+  color: #888;
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+/* The one piece of colour in the panel: today already beats last time. */
+.history-improvement {
+  margin: 0 1rem 0.75rem;
+  color: #66bb6a;
+  font-size: 0.85rem;
+}
+
+.history-panel {
+  padding: 0 1rem 0.75rem;
+}
+
+.history-section + .history-section {
+  margin-top: 1rem;
+}
+
+.history-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.4rem;
+  color: #888;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.history-sets {
+  margin: 0;
+}
+
+.history-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.2rem 0;
+}
+
+.history-row dt {
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.history-row dd {
+  margin: 0;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-best {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Quiet, and far below the primary action: reachable, not hit by accident. */
 .workout-discard {
   width: 100%;

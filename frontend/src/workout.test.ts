@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatRelativeDay,
+  formatSetWeights,
+  formatShortDate,
+  improvementOverLast,
   showMachineBusyButton,
   showMachineBusyButtonDuringRest,
+  type HistoryWorkout,
   type WorkoutExercise,
   type WorkoutPhase,
   type WorkoutState,
@@ -239,5 +244,104 @@ describe('showMachineBusyButtonDuringRest', () => {
     expect(showMachineBusyButtonDuringRest(resting([4, 2, 0, 0], 0, 4))).toBe(
       false,
     )
+  })
+})
+
+/**
+ * The Previous Performance panel's one judgement call: whether today's numbers
+ * beat last time's. Everything else it renders is a fact from the server.
+ *
+ * The rule is deliberately conservative — a trade is not an improvement — so
+ * these cases pin down what does *not* count as one just as much as what does.
+ */
+function lastWorkout(sets: Array<[number, number]>): HistoryWorkout {
+  return {
+    workoutId: 1,
+    completedAt: '2026-07-07T18:00:00.000Z',
+    sets: sets.map(([weight, reps], index) => ({
+      setNumber: index + 1,
+      weight,
+      reps,
+    })),
+  }
+}
+
+describe('improvementOverLast', () => {
+  const last = lastWorkout([
+    [75, 12],
+    [70, 10],
+  ])
+
+  it('reports heavier at the same reps', () => {
+    expect(improvementOverLast(last, 1, 77.5, 12)).toBe('weight')
+  })
+
+  it('reports more reps at the same weight', () => {
+    expect(improvementOverLast(last, 1, 75, 13)).toBe('reps')
+  })
+
+  it('reports both when heavier and for more reps', () => {
+    expect(improvementOverLast(last, 1, 77.5, 13)).toBe('both')
+  })
+
+  /** Set 2 was 70 × 10, set 1 was 75 × 12. The same numbers are a win against
+   *  one row and nothing against the other — reading the wrong row is the bug
+   *  this catches. */
+  it('compares against the matching set, not the first one', () => {
+    expect(improvementOverLast(last, 2, 72.5, 10)).toBe('weight')
+    expect(improvementOverLast(last, 1, 72.5, 10)).toBe('none')
+  })
+
+  it('stays quiet when the set matches last time exactly', () => {
+    expect(improvementOverLast(last, 1, 75, 12)).toBe('none')
+  })
+
+  /** A trade, not a win: the panel does not claim a personal best either way. */
+  it('stays quiet on heavier for fewer reps, and on lighter for more', () => {
+    expect(improvementOverLast(last, 1, 80, 8)).toBe('none')
+    expect(improvementOverLast(last, 1, 70, 15)).toBe('none')
+  })
+
+  it('stays quiet with no history, no matching set, or nothing typed', () => {
+    expect(improvementOverLast(null, 1, 100, 20)).toBe('none')
+    expect(improvementOverLast(last, 3, 100, 20)).toBe('none')
+    expect(improvementOverLast(last, 1, null, 12)).toBe('none')
+    expect(improvementOverLast(last, 1, 77.5, null)).toBe('none')
+  })
+})
+
+describe('formatRelativeDay', () => {
+  const now = new Date(2026, 6, 10, 9, 0)
+
+  /** Whole calendar days: last night reads "Yesterday", not "0 days ago". */
+  it('counts calendar days, not elapsed hours', () => {
+    expect(formatRelativeDay(new Date(2026, 6, 10, 1, 0).toISOString(), now)).toBe(
+      'Today',
+    )
+    expect(formatRelativeDay(new Date(2026, 6, 9, 22, 0).toISOString(), now)).toBe(
+      'Yesterday',
+    )
+    expect(formatRelativeDay(new Date(2026, 6, 7, 18, 0).toISOString(), now)).toBe(
+      '3 days ago',
+    )
+  })
+
+  /** Past a week, "23 days ago" is a number to decode rather than a date. */
+  it('falls back to a plain date after six days', () => {
+    expect(formatRelativeDay(new Date(2026, 6, 3, 18, 0).toISOString(), now)).toBe(
+      formatShortDate(new Date(2026, 6, 3, 18, 0).toISOString()),
+    )
+  })
+})
+
+describe('formatSetWeights', () => {
+  it('lists weights in set order, dropping trailing zeros', () => {
+    expect(formatSetWeights(lastWorkout([[72.5, 12], [70, 10], [70, 8]]).sets)).toBe(
+      '72.5 / 70 / 70',
+    )
+  })
+
+  it('renders an exercise with no sets as an empty string', () => {
+    expect(formatSetWeights([])).toBe('')
   })
 })

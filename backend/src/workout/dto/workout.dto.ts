@@ -11,6 +11,11 @@ import { REPS_MAX, REPS_MIN, WEIGHT_MAX, WEIGHT_MIN } from '../workout.service';
 // malformed request, rejected before it reaches the database.
 const SLUG_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 
+// Exercise names are snapshotted from the plan, where the column is TEXT. Bound
+// what a query string may claim one is: the value only ever reaches the database
+// as a parameter, but an unbounded string is still an unbounded scan.
+const EXERCISE_NAME_MAX = 200;
+
 // Weights are logged to the nearest 0.25 kg in practice; two decimal places is
 // what the NUMERIC(6,2) column stores, so anything finer is a rounding error
 // waiting to happen rather than a precision the user asked for.
@@ -73,6 +78,23 @@ function requireDecimal(
   }
   const factor = 10 ** WEIGHT_DECIMALS;
   return Math.round(value * factor) / factor;
+}
+
+/**
+ * The exercise whose history is being asked for, from the query string. A name
+ * rather than an id: history spans workouts, and an exercise is the same lift
+ * across them when it shares a name — the identity a session mints is per
+ * session by design. Nothing is looked up by it that the user does not own.
+ */
+export function validateExerciseNameQuery(name: unknown): string {
+  if (typeof name !== 'string') {
+    throw new BadRequestException('An exercise name is required.');
+  }
+  const trimmed = name.trim();
+  if (trimmed.length === 0 || trimmed.length > EXERCISE_NAME_MAX) {
+    throw new BadRequestException('Invalid exercise name.');
+  }
+  return trimmed;
 }
 
 /** A training day slug from the request body. */
