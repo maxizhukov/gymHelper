@@ -684,6 +684,174 @@
   cursor: pointer;
 }
 
+/* ── Home tabs ──────────────────────────────────────────────────────────────
+   Two equal targets across the width of a phone, so either is a thumb tap. */
+.home-tabs {
+  margin-top: 2rem;
+}
+
+.tab-list {
+  position: relative;
+  display: flex;
+  border-bottom: 1px solid #333;
+}
+
+.tab {
+  flex: 1;
+  padding: 0.85rem 0.5rem;
+  border: none;
+  background: none;
+  color: #888;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab[data-selected] {
+  color: inherit;
+}
+
+/* Base UI publishes the active tab's geometry as these custom properties. */
+.tab-indicator {
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: var(--active-tab-width);
+  height: 2px;
+  background: currentColor;
+  transform: translateX(var(--active-tab-left));
+  transition:
+    transform 0.2s ease,
+    width 0.2s ease;
+}
+
+.tab-panel {
+  text-align: left;
+}
+
+/* ── Stats tab ─────────────────────────────────────────────────────────────── */
+.stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  margin-top: 1.5rem;
+}
+
+.stats-section h3 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.75rem;
+}
+
+/* Two across on a phone; the fourth card wraps under rather than squeezing. */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+.stat-cell {
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+}
+
+.stat-cell .label {
+  color: #888;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.35rem;
+}
+
+.stat-value {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-empty {
+  padding: 1.25rem;
+}
+
+.stats-empty .message {
+  font-size: 1rem;
+  font-weight: 400;
+  color: #888;
+}
+
+.stats-weight {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.stats-weight-change {
+  text-align: right;
+}
+
+/* Deliberately uncoloured: the arrow shows direction, and the app does not know
+   whether the user is cutting or bulking, so green/red would be a guess. */
+.trend {
+  font-size: 1.1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.stat-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+}
+
+.stat-row-main {
+  min-width: 0;
+}
+
+.stat-row-title {
+  margin: 0 0 0.2rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.stat-row-note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-row-figures {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.stat-row-value {
+  margin: 0 0 0.2rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 code {
   background: rgba(128, 128, 128, 0.2);
   padding: 0.1em 0.3em;
