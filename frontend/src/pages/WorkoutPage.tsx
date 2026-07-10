@@ -8,6 +8,8 @@ import { NumberField } from '@base-ui/react/number-field'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import {
+  BODY_WEIGHT_MAX,
+  BODY_WEIGHT_MIN,
   abandonWorkout,
   deferExercise,
   elapsedSeconds,
@@ -20,6 +22,7 @@ import {
   improvementOverLast,
   nextUp,
   restRemainingSeconds,
+  saveBodyWeight,
   saveDraft,
   showMachineBusyButton,
   showMachineBusyButtonDuringRest,
@@ -30,6 +33,7 @@ import {
   type AnchoredWorkout,
   type ExerciseHistory,
   type Improvement,
+  type WorkoutState,
 } from '../workout'
 
 /** What the green marker says when today's numbers beat last time's. */
@@ -201,7 +205,7 @@ function ActiveWorkout({
   }
 
   if (workout.phase === 'completed') {
-    return <WorkoutSummary anchored={anchored} />
+    return <WorkoutSummary workout={workout} />
   }
 
   const remaining = restRemainingSeconds(anchored)
@@ -602,13 +606,55 @@ function FinishSetDialog({
   )
 }
 
-/** The one screen the workout ends on. Totals come from the database. */
-function WorkoutSummary({ anchored }: { anchored: AnchoredWorkout }) {
-  const { workout } = anchored
+/**
+ * The one screen the workout ends on. Totals come from the database, and the
+ * last thing it asks for is today's body weight — the final step of the workout
+ * rather than a separate errand. Saving writes it to the workout that owns it
+ * and closes the workout; skipping closes it having recorded nothing.
+ *
+ * Reopening a finished workout lands back here with the saved weight in the
+ * input, so a number typed wrongly is corrected where it was entered.
+ */
+function WorkoutSummary({ workout }: { workout: WorkoutState }) {
+  const navigate = useNavigate()
+  const [bodyWeight, setBodyWeight] = useState<number | null>(
+    workout.bodyWeightKg,
+  )
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  /**
+   * Writes the weight, then leaves. The server re-checks the bounds, so what is
+   * checked here is only what earns the user a reason rather than a rejection.
+   */
+  async function handleSave() {
+    if (bodyWeight === null) {
+      setError('Enter your body weight, or skip this step.')
+      return
+    }
+    if (bodyWeight < BODY_WEIGHT_MIN || bodyWeight > BODY_WEIGHT_MAX) {
+      setError(
+        `Body weight must be between ${BODY_WEIGHT_MIN} and ${BODY_WEIGHT_MAX} kg.`,
+      )
+      return
+    }
+
+    setBusy(true)
+    setError('')
+    try {
+      await saveBodyWeight(workout.id, bodyWeight)
+      void navigate('/', { replace: true })
+    } catch (err) {
+      setBusy(false)
+      setError(
+        err instanceof Error ? err.message : 'Could not save your body weight.',
+      )
+    }
+  }
 
   return (
     <main className="app">
-      <h1>Workout completed</h1>
+      <h1>Workout Complete 🎉</h1>
       <p className="subtitle">{workout.dayName}</p>
 
       <dl className="workout-summary">
@@ -626,11 +672,61 @@ function WorkoutSummary({ anchored }: { anchored: AnchoredWorkout }) {
           <dt className="label">Sets completed</dt>
           <dd className="message">{workout.setsCompleted}</dd>
         </div>
+        {/* Part of this workout's record, so it is read back with the rest of it. */}
+        {workout.bodyWeightKg !== null && (
+          <div className="card workout-summary-item">
+            <dt className="label">Body weight</dt>
+            <dd className="message">
+              {formatWeight(workout.bodyWeightKg)} kg
+            </dd>
+          </div>
+        )}
       </dl>
 
-      {/* Navigation, so a real link — Base UI's Button would impose button semantics. */}
+      <Form className="settings-form" onFormSubmit={handleSave}>
+        <Field.Root name="bodyWeight" className="field">
+          <Field.Label>What is your current body weight? (kg)</Field.Label>
+          <NumberField.Root
+            value={bodyWeight}
+            onValueChange={setBodyWeight}
+            min={BODY_WEIGHT_MIN}
+            max={BODY_WEIGHT_MAX}
+            step={0.1}
+            disabled={busy}
+          >
+            <NumberField.Group className="number-field-group">
+              <NumberField.Decrement
+                className="number-field-button"
+                aria-label="Decrease body weight"
+              >
+                −
+              </NumberField.Decrement>
+              <NumberField.Input />
+              <NumberField.Increment
+                className="number-field-button"
+                aria-label="Increase body weight"
+              >
+                +
+              </NumberField.Increment>
+            </NumberField.Group>
+          </NumberField.Root>
+        </Field.Root>
+
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+
+        <Button type="submit" className="workout-action" disabled={busy}>
+          Save &amp; Finish
+        </Button>
+      </Form>
+
+      {/* No scale to hand: finish the workout and record no weight for it.
+          Navigation, so a real link — Base UI's Button would impose button semantics. */}
       <Link className="nav-button" to="/">
-        Done
+        {workout.bodyWeightKg === null ? 'Skip' : 'Done'}
       </Link>
     </main>
   )

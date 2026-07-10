@@ -57,6 +57,9 @@ export type WorkoutState = {
 
   setsCompleted: number
   exercisesCompleted: number
+
+  /** What the user weighed at the end of this workout, kg. Null when skipped. */
+  bodyWeightKg: number | null
 }
 
 /** One logged set of a past workout. */
@@ -193,6 +196,26 @@ export function showMachineBusyButtonDuringRest(workout: WorkoutState): boolean 
  */
 export function deferExercise(): Promise<AnchoredWorkout> {
   return post('defer')
+}
+
+/**
+ * What a body weight may be, in kg. Zero and negatives fall below the floor, and
+ * anything past the ceiling is a slipped decimal point rather than a person. The
+ * server enforces the same bounds — these exist so the user is told why.
+ */
+export const BODY_WEIGHT_MIN = 20
+export const BODY_WEIGHT_MAX = 400
+
+/**
+ * Records the body weight of a finished workout, or corrects one already saved.
+ * The workout is named in the URL: it is finished, so there is no active session
+ * for the server to resolve it from. `null` clears a value entered by mistake.
+ */
+export function saveBodyWeight(
+  workoutId: number,
+  bodyWeightKg: number | null,
+): Promise<AnchoredWorkout> {
+  return post(`${workoutId}/body-weight`, { bodyWeightKg })
 }
 
 /** Abandons the unfinished workout so a new one can be started. */

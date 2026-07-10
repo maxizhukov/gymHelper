@@ -55,6 +55,11 @@ export const WEIGHT_MAX = 1000;
 export const REPS_MIN = 1;
 export const REPS_MAX = 100;
 
+// A human body weight in kilograms. Anything outside this is a typo — a slipped
+// decimal point or a reading in pounds — not a value worth charting later.
+export const BODY_WEIGHT_MIN = 20;
+export const BODY_WEIGHT_MAX = 400;
+
 /** Postgres error code for a unique-constraint violation. */
 const UNIQUE_VIOLATION = '23505';
 
@@ -129,6 +134,11 @@ export interface WorkoutState {
 
   setsCompleted: number;
   exercisesCompleted: number;
+
+  /** What the user weighed at the end of this workout, in kg. Null when they
+   *  skipped the question — a workout with no scale to hand records nothing
+   *  rather than carrying the previous workout's number forward. */
+  bodyWeightKg: number | null;
 }
 
 /** One logged set of a past workout. */
@@ -177,7 +187,20 @@ interface SessionRow {
   planned_reps: number;
   rest_seconds: number;
   sets_per_exercise: number;
+  /** NUMERIC: `pg` hands it back as a string, or as a number once cast. */
+  body_weight_kg: string | number | null;
   server_now: Date;
+}
+
+/**
+ * A NUMERIC column as a JavaScript number. `pg` returns NUMERIC as a string to
+ * keep the precision it cannot fit in a double; a body weight has two decimal
+ * places and loses nothing here. Null — never recorded — stays null.
+ */
+function numericOrNull(value: string | number | null): number | null {
+  if (value === null) return null;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 // Every read of a session joins the day it belongs to and stamps the server's
@@ -186,7 +209,7 @@ interface SessionRow {
 const SESSION_SELECT = `
   SELECT s.id, s.user_id, s.training_day_id, s.started_at, s.completed_at,
          s.exercise_position, s.set_number, s.resting_since, s.set_started_at,
-         s.planned_reps, s.rest_seconds, s.sets_per_exercise,
+         s.planned_reps, s.rest_seconds, s.sets_per_exercise, s.body_weight_kg,
          d.slug, d.day, d.focus,
          now() AS server_now
     FROM workout_sessions s
@@ -247,8 +270,24 @@ export class WorkoutService implements OnModuleInit {
         set_started_at    TIMESTAMPTZ DEFAULT now(),
         planned_reps      INTEGER NOT NULL CHECK (planned_reps BETWEEN 1 AND 100),
         rest_seconds      INTEGER NOT NULL CHECK (rest_seconds BETWEEN 0 AND 3600),
-        sets_per_exercise INTEGER NOT NULL CHECK (sets_per_exercise BETWEEN 1 AND 20)
+        sets_per_exercise INTEGER NOT NULL CHECK (sets_per_exercise BETWEEN 1 AND 20),
+        body_weight_kg    NUMERIC(5, 2) CHECK (body_weight_kg BETWEEN 20 AND 400)
       )
+    `);
+
+    // The workout owns the body weight recorded at the end of it: one measurement
+    // per session, taken at a known time, alongside the sets it belongs with.
+    // That is the shape the weight chart and the strength-per-kilo view want —
+    // a separate table would only re-derive this join. Nullable because the user
+    // may skip the question, and a skipped workout must not inherit a stale
+    // number. Added after the table shipped; existing sessions read null.
+    //
+    // Postgres skips the whole clause when the column is already there, so the
+    // CHECK is not re-added on every boot.
+    await this.db.query(`
+      ALTER TABLE workout_sessions
+        ADD COLUMN IF NOT EXISTS body_weight_kg NUMERIC(5, 2)
+          CHECK (body_weight_kg BETWEEN 20 AND 400)
     `);
 
     // The session's exercise queue, and the workout's exercise identities.
@@ -1309,6 +1348,53 @@ export class WorkoutService implements OnModuleInit {
     });
   }
 
+  /**
+   * Records — or corrects — the body weight of one finished workout. Written
+   * straight to the session row that owns it, so the last step of the workout is
+   * one round trip and the value is durable before the screen closes.
+   *
+   * Scoped to the owner, so an id from the URL cannot write another user's
+   * workout. Only a completed workout takes a weight: the question is asked at
+   * the end, and a workout still underway has no end to attach it to.
+   *
+   * `null` clears a weight entered by mistake. Skipping simply never calls this.
+   */
+  async setBodyWeight(
+    userId: number,
+    workoutId: number,
+    bodyWeightKg: number | null,
+  ): Promise<WorkoutState> {
+    return this.db.transaction(async (client) => {
+      const result = await client.query<SessionRow>(
+        `${SESSION_SELECT}
+          WHERE s.id = $1 AND s.user_id = $2 AND s.abandoned_at IS NULL
+          FOR UPDATE OF s`,
+        [workoutId, userId],
+      );
+      const session = result.rows[0];
+      if (!session) {
+        throw new NotFoundException('Workout not found.');
+      }
+      if (session.completed_at === null) {
+        throw new BadRequestException(
+          'Finish the workout before recording your body weight.',
+        );
+      }
+
+      const updated = await client.query<SessionRow>(
+        `UPDATE workout_sessions
+            SET body_weight_kg = $2
+          WHERE id = $1
+        RETURNING *, now() AS server_now`,
+        [session.id, bodyWeightKg],
+      );
+      return this.buildState(
+        this.mergeSession(session, updated.rows[0]),
+        client,
+      );
+    });
+  }
+
   private async countExercises(
     client: PoolClient,
     sessionId: number,
@@ -1496,6 +1582,7 @@ export class WorkoutService implements OnModuleInit {
       restRemainingSeconds,
       setsCompleted,
       exercisesCompleted,
+      bodyWeightKg: numericOrNull(session.body_weight_kg),
     };
   }
 

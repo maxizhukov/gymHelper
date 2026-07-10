@@ -16,6 +16,7 @@ import type { AuthenticatedUser } from '../auth/auth.service';
 import { readSessionToken } from '../auth/cookie.util';
 import { SessionService } from '../auth/session.service';
 import {
+  validateBodyWeightDto,
   validateExerciseNameQuery,
   validateFinishSetDto,
   validateSaveDraftDto,
@@ -147,6 +148,33 @@ export class WorkoutController {
   async defer(@Req() req: Request): Promise<{ workout: WorkoutState }> {
     const user = await this.currentUser(req);
     return { workout: await this.workoutService.deferExercise(user.id) };
+  }
+
+  /**
+   * Records the body weight of a finished workout — the last step of the workout
+   * itself — or corrects one entered wrongly, later, from its summary. Names the
+   * workout in the URL because the session cursor has already let go of it: it is
+   * finished, so there is no active workout to resolve it from.
+   */
+  @Post(':id/body-weight')
+  @HttpCode(200)
+  async bodyWeight(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<{ workout: WorkoutState }> {
+    const user = await this.currentUser(req);
+    if (!ID_PATTERN.test(id)) {
+      throw new BadRequestException('Invalid workout id.');
+    }
+    const { bodyWeightKg } = validateBodyWeightDto(body);
+    return {
+      workout: await this.workoutService.setBodyWeight(
+        user.id,
+        Number(id),
+        bodyWeightKg,
+      ),
+    };
   }
 
   /** Abandons the unfinished workout so a new one can be started. */

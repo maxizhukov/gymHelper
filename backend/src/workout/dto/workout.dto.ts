@@ -1,5 +1,12 @@
 import { BadRequestException } from '@nestjs/common';
-import { REPS_MAX, REPS_MIN, WEIGHT_MAX, WEIGHT_MIN } from '../workout.service';
+import {
+  BODY_WEIGHT_MAX,
+  BODY_WEIGHT_MIN,
+  REPS_MAX,
+  REPS_MIN,
+  WEIGHT_MAX,
+  WEIGHT_MIN,
+} from '../workout.service';
 
 /**
  * Validation for the workout endpoints. Assumes hostile input: nothing here
@@ -29,6 +36,10 @@ export interface FinishSetDto {
 export interface SaveDraftDto {
   weight: number | null;
   reps: number | null;
+}
+
+export interface BodyWeightDto {
+  bodyWeightKg: number | null;
 }
 
 function requireObject(body: unknown): Record<string, unknown> {
@@ -112,6 +123,27 @@ export function validateFinishSetDto(body: unknown): FinishSetDto {
   return {
     weight: requireDecimal(weight, 'weight', WEIGHT_MIN, WEIGHT_MAX),
     reps: requireInteger(reps, 'reps', REPS_MIN, REPS_MAX),
+  };
+}
+
+/**
+ * The body weight recorded at the end of a workout. Decimal kilograms, bounded
+ * either side: zero and negatives are rejected by the lower bound, and so is any
+ * reading a human body cannot produce. `null` clears a value entered wrongly —
+ * skipping the question never sends the request at all.
+ */
+export function validateBodyWeightDto(body: unknown): BodyWeightDto {
+  const { bodyWeightKg } = requireObject(body);
+  return {
+    bodyWeightKg:
+      bodyWeightKg === null || bodyWeightKg === undefined
+        ? null
+        : requireDecimal(
+            bodyWeightKg,
+            'bodyWeightKg',
+            BODY_WEIGHT_MIN,
+            BODY_WEIGHT_MAX,
+          ),
   };
 }
 

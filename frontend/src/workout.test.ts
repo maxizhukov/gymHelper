@@ -65,6 +65,7 @@ function workoutState(
     restRemainingSeconds: null,
     setsCompleted: completedSets.reduce((total, sets) => total + sets, 0),
     exercisesCompleted: 0,
+    bodyWeightKg: null,
     ...overrides,
   }
 }
