@@ -1,63 +1,85 @@
-/* Mobile-first: base styles target small screens; media queries scale up. */
+/* Fitness App design system applied to GymHelper. Class names are unchanged from
+   the original markup — only the visual language (colour, type, cards, radii,
+   spacing, buttons, nav) is re-themed to match the Claude Design reference:
+   light #FAFAF8 screen on an #E7E7E1 canvas, ink + lime accent, Space Grotesk
+   display type. Layout structure is preserved so all app behaviour still works. */
+
+/* Mobile-first: the app is a phone-width column. On a phone it fills the screen;
+   on a wide viewport it sits as a rounded "device" on the canvas. */
 .app {
   max-width: 480px;
   margin: 0 auto;
-  padding: 2rem 1.25rem;
+  padding: 2rem 1.25rem 2.5rem;
   text-align: center;
+  background: var(--screen);
+  min-height: 100svh;
 }
 
-/* The running build, on every screen. In the document flow rather than pinned
-   to the viewport, so it can never sit on top of a button on a short screen.
-   Deliberately quiet: it is a diagnostic, not part of the workout. */
 .app-version {
   padding: 0 1.25rem 1.5rem;
   text-align: center;
+  background: var(--screen);
 }
 
 .app-version p {
   margin: 0;
   font-size: 0.75rem;
-  color: #666;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
 .app h1 {
+  font-family: var(--font-display);
   font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
   margin: 0 0 0.25rem;
+  color: var(--ink);
+}
+
+.app h2,
+.app h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
 }
 
 .subtitle {
-  color: #888;
+  color: var(--muted);
   margin: 0 0 2rem;
 }
 
 .card {
-  border: 1px solid #333;
-  border-radius: 12px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
   padding: 1.5rem;
+  background: var(--card);
   transition: border-color 0.2s ease;
 }
 
 .card .label {
-  color: #888;
-  font-size: 0.85rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin: 0 0 0.5rem;
 }
 
 .card .message {
+  font-family: var(--font-display);
   font-size: 1.25rem;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   margin: 0;
+  color: var(--ink);
 }
 
 .status-ok {
-  border-color: #2e7d32;
+  border-color: var(--lime);
 }
 
 .status-error {
-  border-color: #c62828;
+  border-color: var(--danger);
 }
 
 .login-form {
@@ -73,41 +95,39 @@
   gap: 0.35rem;
 }
 
-/* Field.Label renders a <label>; Field.Error renders a <div>. */
 .field label {
   font-size: 0.85rem;
-  color: #888;
+  font-weight: 600;
+  color: var(--muted-2);
 }
 
 .field-error {
-  color: #ef5350;
+  color: var(--danger);
   font-size: 0.85rem;
 }
 
 .field input {
   width: 100%;
   box-sizing: border-box;
-  padding: 0.75rem;
+  padding: 0.8rem 0.9rem;
   /* 1rem (16px) keeps mobile Safari from auto-zooming on focus. */
   font-size: 1rem;
-  border: 1px solid #333;
-  border-radius: 8px;
-  background: rgba(128, 128, 128, 0.08);
-  color: inherit;
+  font-family: inherit;
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--ink);
 }
 
 .field input:focus {
   outline: none;
-  border-color: #2e7d32;
+  border-color: var(--ink);
 }
 
-/* Base UI sets data-invalid on the control once the field fails validation. */
 .field input[data-invalid] {
-  border-color: #c62828;
+  border-color: var(--danger);
 }
 
-/* Same layout as .login-form, but its own class so the submit-button rule below
-   does not also catch the number-field steppers. */
 .settings-form {
   display: flex;
   flex-direction: column;
@@ -118,13 +138,14 @@
 
 .settings-form button[type='submit'] {
   width: 100%;
-  padding: 0.85rem;
+  padding: 0.95rem;
   font-size: 1rem;
-  font-weight: 600;
+  font-family: inherit;
+  font-weight: 700;
   border: none;
-  border-radius: 8px;
-  background: #2e7d32;
-  color: #fff;
+  border-radius: 18px;
+  background: var(--lime);
+  color: var(--ink);
   cursor: pointer;
 }
 
@@ -133,8 +154,6 @@
   cursor: default;
 }
 
-/* Steppers flank the input. Must follow `.field input`: same specificity, so
-   source order decides. */
 .number-field-group {
   display: flex;
   align-items: stretch;
@@ -147,35 +166,35 @@
   text-align: center;
 }
 
-/* 44px keeps the steppers a comfortable tap target on a phone. */
 .number-field-button {
   flex: 0 0 auto;
   width: 3rem;
   min-height: 44px;
   font-size: 1.25rem;
   line-height: 1;
-  border: 1px solid #333;
-  border-radius: 8px;
-  background: rgba(128, 128, 128, 0.08);
-  color: inherit;
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--ink);
   cursor: pointer;
 }
 
 .separator {
   height: 1px;
   margin: 1.5rem 0 0;
-  background: #333;
+  background: var(--border);
 }
 
 .login-form button {
   width: 100%;
-  padding: 0.85rem;
+  padding: 0.95rem;
   font-size: 1rem;
-  font-weight: 600;
+  font-family: inherit;
+  font-weight: 700;
   border: none;
-  border-radius: 8px;
-  background: #2e7d32;
-  color: #fff;
+  border-radius: 18px;
+  background: var(--lime);
+  color: var(--ink);
   cursor: pointer;
 }
 
@@ -185,13 +204,13 @@
 }
 
 .error {
-  color: #ef5350;
+  color: var(--danger);
   margin: 0;
   font-size: 0.9rem;
 }
 
 .success {
-  color: #66bb6a;
+  color: var(--lime-deep);
   margin: 0;
   font-size: 0.9rem;
 }
@@ -202,11 +221,11 @@
 }
 
 .training-days h2 {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #888;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.1em;
   margin: 0 0 0.75rem;
 }
 
@@ -219,11 +238,10 @@
   padding: 0;
 }
 
-/* Renders as an <a> (a route link), so reset link styling. Compact against the
-   default .card padding — these are a scannable list, not a panel. */
 .training-day-card {
   display: block;
-  padding: 1rem 1.25rem;
+  padding: 1.1rem 1.25rem;
+  border-radius: 20px;
   text-decoration: none;
   color: inherit;
 }
@@ -235,7 +253,6 @@
 
 .exercise-list {
   margin: 0;
-  /* Room for the numbers, which sit outside the list. */
   padding: 0 0 0 1.75rem;
 }
 
@@ -245,11 +262,10 @@
 }
 
 .exercise-item::marker {
-  color: #888;
+  color: var(--muted);
   font-size: 0.85rem;
 }
 
-/* The separator between groups doubles as the gap, so it needs room below too. */
 .exercise-group .separator {
   margin: 1rem 0;
 }
@@ -258,71 +274,68 @@
   margin-top: 1.5rem;
 }
 
-/* Renders as an <a> (a route link), so reset link styling and centre the label. */
 .nav-button {
   display: block;
   box-sizing: border-box;
   width: 100%;
-  padding: 0.85rem;
+  padding: 0.95rem;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 700;
   text-align: center;
   text-decoration: none;
-  border: 1px solid #333;
-  border-radius: 8px;
-  background: rgba(128, 128, 128, 0.08);
-  color: inherit;
+  border: 1px solid var(--border-2);
+  border-radius: 18px;
+  background: var(--card);
+  color: var(--ink);
   cursor: pointer;
 }
 
-/* Also an <a>; left-aligned above the page heading. */
 .back-link {
   display: inline-block;
   margin-bottom: 0.5rem;
   padding: 0.25rem 0;
   font-size: 1rem;
+  font-weight: 600;
   text-decoration: none;
   border: none;
   background: none;
-  color: #888;
+  color: var(--muted-2);
   cursor: pointer;
 }
 
 .logout-button {
   width: 100%;
   margin-top: 1.5rem;
-  padding: 0.85rem;
+  padding: 0.95rem;
   font-size: 1rem;
-  font-weight: 600;
-  border: 1px solid #c62828;
-  border-radius: 8px;
+  font-weight: 700;
+  border: 1px solid var(--border-2);
+  border-radius: 18px;
   background: transparent;
-  color: #ef5350;
+  color: var(--danger-text);
   cursor: pointer;
 }
 
 /* ── Workout ────────────────────────────────────────────────────────────────
    Built for a phone held at arm's length between sets: one primary action,
    sized so it can be hit without looking, and numbers big enough to read from
-   the rack. */
+   the rack. Primary action is the lime accent; secondary is a quiet outline. */
 
-/* The single big button on every workout screen. Also used as an <a> (Resume),
-   so it resets link styling and centres its own label. */
 .workout-action {
   display: block;
   box-sizing: border-box;
   width: 100%;
-  /* Deliberately tall: this is tapped mid-set, with tired hands, unlooked at. */
   min-height: 4rem;
   padding: 1.25rem;
-  font-size: 1.25rem;
-  font-weight: 600;
+  font-family: inherit;
+  font-size: 1.2rem;
+  font-weight: 700;
   text-align: center;
   text-decoration: none;
   border: none;
-  border-radius: 12px;
-  background: #2e7d32;
-  color: #fff;
+  border-radius: 22px;
+  background: var(--lime);
+  color: var(--ink);
   cursor: pointer;
 }
 
@@ -344,7 +357,7 @@
 
 .workout-start-note {
   margin: 0;
-  color: #888;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
@@ -357,17 +370,18 @@
 
 .workout-header .label {
   margin: 0;
-  color: #888;
-  font-size: 0.85rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-/* Tabular figures keep the clock from jittering as its digits change. */
 .workout-clock {
   margin: 0;
+  font-family: var(--font-display);
   font-size: 1.25rem;
-  font-weight: 600;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -381,16 +395,21 @@
 
 .workout-progress {
   margin: 0;
-  color: #888;
-  font-size: 0.85rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .workout-exercise {
   margin: 0;
+  font-family: var(--font-display);
   font-size: 1.75rem;
-  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--ink);
 }
 
 .workout-stats {
@@ -400,23 +419,26 @@
 
 .workout-stat {
   flex: 1;
-  border: 1px solid #333;
-  border-radius: 12px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
   padding: 1rem;
+  background: var(--card);
 }
 
 .workout-stat .label {
   margin: 0 0 0.35rem;
-  color: #888;
+  color: var(--muted);
   font-size: 0.75rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .workout-stat-value {
   margin: 0;
+  font-family: var(--font-display);
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -431,24 +453,26 @@
 
 .workout-rest .label {
   margin: 0;
-  color: #888;
-  font-size: 0.85rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-/* The countdown is the whole screen during rest — readable from the bench. */
 .rest-clock {
   margin: 0;
+  font-family: var(--font-display);
   font-size: 4.5rem;
   font-weight: 700;
   line-height: 1;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
 }
 
 .workout-next-up {
   margin: 0 0 0.5rem;
-  color: #888;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
@@ -457,17 +481,18 @@
   margin-top: 0.5rem;
 }
 
-/* Sits under the primary action: available mid-set, never mistaken for it. */
 .workout-secondary {
   width: 100%;
   box-sizing: border-box;
   min-height: 3rem;
-  padding: 0.75rem;
+  padding: 0.85rem;
+  font-family: inherit;
   font-size: 0.95rem;
-  border: 1px solid #333;
-  border-radius: 12px;
-  background: transparent;
-  color: inherit;
+  font-weight: 600;
+  border: 1px solid var(--border-2);
+  border-radius: 18px;
+  background: var(--card);
+  color: var(--ink);
   cursor: pointer;
 }
 
@@ -476,28 +501,25 @@
   cursor: default;
 }
 
-/* Informational: exercises pushed to the back of the queue, still to be done.
-   fit-content keeps the pill tight around its text and hard left, against the
-   centred text of .app. */
 .workout-deferred {
   width: fit-content;
   margin: -0.75rem 0 1.25rem;
-  padding: 0.25rem 0.6rem;
-  border: 1px solid #333;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--border-2);
   border-radius: 999px;
-  color: #888;
+  background: var(--surface-2);
+  color: var(--muted-2);
   font-size: 0.75rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-/* ── Previous Performance ───────────────────────────────────────────────────
-   Collapsed, it is one quiet row. Expanded, it is the only thing on the screen
-   worth reading — so the numbers get tabular figures and everything else greys
-   back. It must never push the weight input below the fold when collapsed. */
+/* ── Previous Performance ─────────────────────────────────────────────────── */
 .history {
-  border: 1px solid #333;
-  border-radius: 12px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--card);
 }
 
 .history-trigger {
@@ -506,11 +528,11 @@
   gap: 0.5rem;
   box-sizing: border-box;
   width: 100%;
-  /* Comfortably tappable with one thumb, mid-set. */
   min-height: 3rem;
-  padding: 0.75rem 1rem;
+  padding: 0.85rem 1rem;
   font: inherit;
   font-size: 0.95rem;
+  font-weight: 600;
   text-align: left;
   border: none;
   background: none;
@@ -518,44 +540,40 @@
   cursor: pointer;
 }
 
-/* A triangle, not an icon font and not an emoji: it points right when closed
-   and down when open, which is the whole of what it has to say. */
 .history-chevron {
   flex: none;
   width: 0;
   height: 0;
   border-top: 0.3rem solid transparent;
   border-bottom: 0.3rem solid transparent;
-  border-left: 0.4rem solid #888;
+  border-left: 0.4rem solid var(--muted);
   transition: transform 150ms ease;
 }
 
 .history-trigger[data-panel-open] .history-chevron {
-  /* About its own centre, which the border triangle does not sit on. */
   transform: translateX(-0.1rem) rotate(90deg);
 }
 
 .history-title {
-  font-weight: 600;
+  font-weight: 700;
 }
 
-/* Pushed hard right on the trigger row; inline elsewhere. */
 .history-trigger .history-note {
   margin-left: auto;
 }
 
 .history-note {
   margin: 0;
-  color: #888;
+  color: var(--muted);
   font-size: 0.85rem;
   font-weight: 400;
 }
 
-/* The one piece of colour in the panel: today already beats last time. */
 .history-improvement {
   margin: 0 1rem 0.75rem;
-  color: #66bb6a;
+  color: var(--lime-deep);
   font-size: 0.85rem;
+  font-weight: 600;
 }
 
 .history-panel {
@@ -572,8 +590,9 @@
   justify-content: space-between;
   gap: 0.5rem;
   margin: 0 0 0.4rem;
-  color: #888;
+  color: var(--muted);
   font-size: 0.75rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -591,7 +610,7 @@
 }
 
 .history-row dt {
-  color: #888;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
@@ -603,12 +622,12 @@
 
 .history-best {
   margin: 0;
+  font-family: var(--font-display);
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
-/* Quiet, and far below the primary action: reachable, not hit by accident. */
 .workout-discard {
   width: 100%;
   margin-top: 3rem;
@@ -616,7 +635,7 @@
   font-size: 0.9rem;
   border: none;
   background: none;
-  color: #888;
+  color: var(--muted);
   cursor: pointer;
 }
 
@@ -629,25 +648,27 @@
 }
 
 .workout-summary-item {
-  padding: 1rem 1.25rem;
+  padding: 1.1rem 1.25rem;
+  border-radius: 18px;
 }
 
 .workout-summary-item dt {
   margin: 0 0 0.35rem;
+  color: var(--muted);
 }
 
 .workout-summary-item dd {
   margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Finish-set dialog ──────────────────────────────────────────────────────
-   A bottom sheet on a phone: it opens under the thumb rather than in the
-   middle of the screen. */
+/* ── Finish-set dialog: a bottom sheet on a phone ──────────────────────────── */
 .dialog-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(20, 20, 25, 0.45);
 }
 
 .dialog-popup {
@@ -656,13 +677,11 @@
   bottom: 0;
   left: 0;
   box-sizing: border-box;
-  /* Clears the home indicator on a notched phone. */
   padding: 1.5rem 1.25rem calc(1.5rem + env(safe-area-inset-bottom));
-  border: 1px solid #333;
-  border-radius: 16px 16px 0 0;
-  /* System colours, so the sheet follows the same light/dark scheme as :root. */
-  background: Canvas;
-  color: CanvasText;
+  border: 1px solid var(--border);
+  border-radius: 28px 28px 0 0;
+  background: var(--screen);
+  color: var(--ink);
 }
 
 .dialog-popup .settings-form {
@@ -680,12 +699,12 @@
   font-size: 0.9rem;
   border: none;
   background: none;
-  color: #888;
+  color: var(--muted);
   cursor: pointer;
 }
 
 /* ── Home tabs ──────────────────────────────────────────────────────────────
-   Two equal targets across the width of a phone, so either is a thumb tap. */
+   Segmented pill row, matching the design's chip-style navigation. */
 .home-tabs {
   margin-top: 2rem;
 }
@@ -693,32 +712,41 @@
 .tab-list {
   position: relative;
   display: flex;
-  border-bottom: 1px solid #333;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 20px;
+  background: var(--surface-2);
 }
 
 .tab {
   flex: 1;
-  padding: 0.85rem 0.5rem;
+  padding: 0.7rem 0.5rem;
   border: none;
+  border-radius: 16px;
   background: none;
-  color: #888;
+  color: var(--muted-2);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+  z-index: 1;
+  transition: color 0.2s ease;
 }
 
 .tab[data-selected] {
-  color: inherit;
+  color: var(--ink);
 }
 
-/* Base UI publishes the active tab's geometry as these custom properties. */
+/* Base UI publishes the active tab's geometry as these custom properties; the
+   indicator is a moving dark pill behind the selected tab. */
 .tab-indicator {
   position: absolute;
-  bottom: -1px;
+  top: 4px;
   left: 0;
   width: var(--active-tab-width);
-  height: 2px;
-  background: currentColor;
+  height: calc(100% - 8px);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 2px 8px -3px rgba(20, 20, 25, 0.25);
   transform: translateX(var(--active-tab-left));
   transition:
     transform 0.2s ease,
@@ -738,15 +766,14 @@
 }
 
 .stats-section h3 {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #888;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.1em;
   margin: 0 0 0.75rem;
 }
 
-/* Two across on a phone; the fourth card wraps under rather than squeezing. */
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -754,14 +781,16 @@
 }
 
 .stat-cell {
-  border: 1px solid #333;
-  border-radius: 12px;
-  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 1rem;
+  background: var(--card);
 }
 
 .stat-cell .label {
-  color: #888;
+  color: var(--muted);
   font-size: 0.75rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin: 0 0 0.35rem;
@@ -769,19 +798,21 @@
 
 .stat-value {
   margin: 0;
-  font-size: 1.35rem;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .stats-empty {
   padding: 1.25rem;
+  border-radius: 18px;
 }
 
 .stats-empty .message {
   font-size: 1rem;
   font-weight: 400;
-  color: #888;
+  color: var(--muted);
 }
 
 .stats-weight {
@@ -790,17 +821,17 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 1.25rem;
+  border-radius: 18px;
 }
 
 .stats-weight-change {
   text-align: right;
 }
 
-/* Deliberately uncoloured: the arrow shows direction, and the app does not know
-   whether the user is cutting or bulking, so green/red would be a guess. */
 .trend {
+  font-family: var(--font-display);
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -818,9 +849,10 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 1rem;
-  border: 1px solid #333;
-  border-radius: 12px;
-  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 0.9rem 1rem;
+  background: var(--card);
 }
 
 .stat-row-main {
@@ -830,13 +862,13 @@
 .stat-row-title {
   margin: 0 0 0.2rem;
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .stat-row-note {
   margin: 0;
   font-size: 0.8rem;
-  color: #888;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -847,13 +879,13 @@
 
 .stat-row-value {
   margin: 0 0 0.2rem;
+  font-family: var(--font-display);
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
-/* The Food tab: a description box, its submit button, then the parsed results
-   (which reuse the .stat-list rows above). */
+/* ── Food description form (legacy parse box) ──────────────────────────────── */
 .food-form {
   display: flex;
   flex-direction: column;
@@ -865,24 +897,22 @@
 .food-input {
   width: 100%;
   box-sizing: border-box;
-  padding: 0.75rem;
-  /* 1rem keeps mobile Safari from auto-zooming on focus, matching .field input. */
+  padding: 0.8rem 0.9rem;
   font-size: 1rem;
   font-family: inherit;
-  border: 1px solid #333;
-  border-radius: 8px;
-  background: rgba(128, 128, 128, 0.08);
-  color: inherit;
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--ink);
   resize: vertical;
 }
 
 .food-input:focus {
   outline: none;
-  border-color: #2e7d32;
+  border-color: var(--ink);
 }
 
-/* ── Food tracker v2 ─────────────────────────────────────────────────────────
-   Today/history view, progress meters, entry list, and the shared editor. */
+/* ── Food tracker v2 ───────────────────────────────────────────────────────── */
 .food {
   display: flex;
   flex-direction: column;
@@ -900,13 +930,13 @@
 
 .food-nav-arrow {
   min-width: 2.5rem;
-  padding: 0.4rem 0.75rem;
+  padding: 0.45rem 0.75rem;
   font-size: 1.25rem;
   line-height: 1;
-  border: 1px solid #333;
-  border-radius: 8px;
-  background: rgba(128, 128, 128, 0.08);
-  color: inherit;
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--ink);
   cursor: pointer;
 }
 
@@ -919,11 +949,10 @@
   position: relative;
   flex: 1;
   text-align: center;
-  font-weight: 600;
+  font-weight: 700;
+  font-family: var(--font-display);
 }
 
-/* The native date input sits invisibly over the label so the whole pill taps
-   open the picker without a separate control cluttering the row. */
 .food-date-input {
   position: absolute;
   inset: 0;
@@ -946,22 +975,23 @@
 }
 
 .food-button-secondary {
-  background: rgba(128, 128, 128, 0.12);
-  color: inherit;
+  background: var(--surface-2);
+  border-color: var(--border-2);
+  color: var(--ink);
 }
 
 .food-button-small {
-  padding: 0.4rem 0.9rem;
+  padding: 0.5rem 0.9rem;
   font-size: 0.85rem;
 }
 
 .food-toast {
   margin: 0 0 0.75rem;
-  padding: 0.6rem 0.9rem;
-  border-radius: 0.6rem;
-  border: 1px solid #2e7d32;
-  background: rgba(46, 125, 50, 0.12);
-  color: inherit;
+  padding: 0.65rem 0.9rem;
+  border-radius: 14px;
+  border: 1px solid var(--lime);
+  background: rgba(203, 247, 74, 0.28);
+  color: var(--ink);
   font-size: 0.9rem;
   font-weight: 600;
   text-align: center;
@@ -1003,14 +1033,14 @@
 }
 
 .food-meter-goal {
-  color: #888;
+  color: var(--muted);
   font-size: 0.8rem;
 }
 
 .food-meter-track {
   height: 8px;
   border-radius: 999px;
-  background: rgba(128, 128, 128, 0.18);
+  background: var(--surface-3);
   overflow: hidden;
 }
 
@@ -1021,22 +1051,22 @@
 }
 
 .food-meter-fill[data-state='good'] {
-  background: #2e7d32;
+  background: var(--ink);
 }
 
 .food-meter-fill[data-state='under'] {
-  background: #6b7280;
+  background: #8a8d84;
 }
 
 .food-meter-fill[data-state='over'] {
-  background: #c2410c;
+  background: var(--danger);
 }
 
 .food-micros summary {
   cursor: pointer;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #888;
+  color: var(--muted);
   padding: 0.5rem 0;
 }
 
@@ -1056,10 +1086,10 @@
 
 .food-meal-heading {
   font-size: 0.8rem;
-  font-weight: 600;
-  color: #888;
+  font-weight: 700;
+  color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.1em;
   margin: 0 0 0.6rem;
 }
 
@@ -1068,13 +1098,14 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  border: 1px solid #333;
-  border-radius: 12px;
-  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 0.9rem 1rem;
+  background: var(--card);
 }
 
 .food-entry-brand {
-  color: #888;
+  color: var(--muted);
   font-weight: 400;
 }
 
@@ -1097,12 +1128,12 @@
   font: inherit;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #4ea1ff;
+  color: var(--lime-deep);
   cursor: pointer;
 }
 
 .food-link-danger {
-  color: #ef5350;
+  color: var(--danger);
 }
 
 /* ── Add / editor ────────────────────────────────────────────────────────── */
@@ -1114,7 +1145,10 @@
 
 .food-mode-toggle {
   display: flex;
-  border-bottom: 1px solid #333;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 18px;
+  background: var(--surface-2);
 }
 
 .food-mode-toggle .tab {
@@ -1131,8 +1165,8 @@
   max-width: 100%;
   max-height: 220px;
   object-fit: contain;
-  border-radius: 8px;
-  border: 1px solid #333;
+  border-radius: 14px;
+  border: 1px solid var(--border);
 }
 
 .food-draft-list {
@@ -1141,55 +1175,56 @@
 
 .food-confidence {
   margin-left: 0.5rem;
-  padding: 0.1rem 0.45rem;
+  padding: 0.12rem 0.5rem;
   border-radius: 999px;
   font-size: 0.7rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   vertical-align: middle;
 }
 
 .food-confidence[data-level='high'] {
-  background: rgba(46, 125, 50, 0.2);
-  color: #66bb6a;
+  background: var(--lime-tint);
+  color: var(--lime-tint-text);
 }
 
 .food-confidence[data-level='medium'] {
-  background: rgba(194, 65, 12, 0.18);
-  color: #ffa726;
+  background: rgba(194, 65, 12, 0.14);
+  color: var(--danger-text);
 }
 
 .food-confidence[data-level='low'] {
-  background: rgba(239, 83, 80, 0.18);
-  color: #ef5350;
+  background: rgba(194, 65, 12, 0.2);
+  color: var(--danger);
 }
 
 .food-entry-form {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  border: 1px solid #333;
-  border-radius: 12px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
   padding: 1rem;
+  background: var(--card);
   text-align: left;
 }
 
 .food-text-input {
   width: 100%;
   box-sizing: border-box;
-  padding: 0.6rem 0.7rem;
+  padding: 0.65rem 0.75rem;
   font-size: 1rem;
   font-family: inherit;
-  border: 1px solid #333;
-  border-radius: 8px;
-  background: rgba(128, 128, 128, 0.08);
-  color: inherit;
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--ink);
 }
 
 .food-text-input:focus {
   outline: none;
-  border-color: #2e7d32;
+  border-color: var(--ink);
 }
 
 .food-form-row {
@@ -1223,16 +1258,16 @@
 
 .food-nutrient-label {
   font-size: 0.75rem;
-  color: #aaa;
+  color: var(--muted-2);
 }
 
 .food-nutrient-unit {
-  color: #777;
+  color: var(--muted);
 }
 
 .food-assumptions {
   font-size: 0.8rem;
-  color: #aaa;
+  color: var(--muted-2);
 }
 
 .food-assumptions ul {
@@ -1243,17 +1278,17 @@
 .food-review-flag {
   margin: 0;
   padding: 0.5rem 0.75rem;
-  border-radius: 8px;
-  background: rgba(194, 65, 12, 0.15);
-  color: #ffa726;
+  border-radius: 12px;
+  background: rgba(194, 65, 12, 0.12);
+  color: var(--danger-text);
   font-size: 0.85rem;
 }
 
 /* ── Primary action button ───────────────────────────────────────────────── */
 .food-button-primary {
-  background: #2e7d32;
-  border-color: #2e7d32;
-  color: #fff;
+  background: var(--lime);
+  border-color: var(--lime);
+  color: var(--ink);
 }
 
 .food-button-primary:disabled {
@@ -1263,41 +1298,56 @@
 
 /* ── Today summary: calories card + macro chips ──────────────────────────── */
 .food-calorie-card {
-  border: 1px solid #333;
-  border-radius: 14px;
-  padding: 1.1rem 1.25rem;
+  border: none;
+  border-radius: 24px;
+  padding: 1.25rem 1.35rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  background: rgba(46, 125, 50, 0.06);
+  background: var(--ink);
+  color: #fff;
 }
 
 .food-calorie-title {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #888;
+  letter-spacing: 0.1em;
+  color: var(--lime);
 }
 
 .food-calorie-value {
   margin: 0;
-  font-size: 1.9rem;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 700;
   line-height: 1.1;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+  color: #fff;
 }
 
 .food-calorie-goal {
   font-size: 1rem;
   font-weight: 400;
-  color: #888;
+  color: #a9aba4;
 }
 
 .food-calorie-remaining {
   margin: 0;
   font-size: 0.85rem;
-  color: #aaa;
+  color: #a9aba4;
+}
+
+/* The calorie card sits on the dark ink surface, so its progress meter flips to
+   the lime accent on a darker track (an ink fill would vanish). */
+.food-calorie-card .food-meter-track {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.food-calorie-card .food-meter-fill[data-state='good'] {
+  background: var(--lime);
 }
 
 .food-macro-chips {
@@ -1310,24 +1360,27 @@
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  border: 1px solid #333;
-  border-radius: 12px;
-  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 0.7rem 0.75rem;
+  background: var(--card);
 }
 
 .food-macro-chip-label {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #888;
+  color: var(--muted);
 }
 
 .food-macro-chip-value {
+  font-family: var(--font-display);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   font-size: 1rem;
 }
 
 .food-macro-chip-goal {
-  color: #888;
+  color: var(--muted);
   font-size: 0.8rem;
 }
 
@@ -1340,26 +1393,30 @@
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-  border: 1px solid #333;
-  border-radius: 14px;
-  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 1.25rem 1.35rem;
+  background: var(--card);
 }
 
 .food-add-title {
   margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.01em;
   font-size: 1.15rem;
 }
 
 .food-scan-button {
   display: inline-block;
   text-align: center;
-  padding: 0.85rem;
+  padding: 0.9rem;
   font-size: 1rem;
-  font-weight: 600;
-  border: 1px dashed #2e7d32;
-  border-radius: 8px;
-  background: rgba(46, 125, 50, 0.08);
-  color: inherit;
+  font-weight: 700;
+  border: 1px dashed var(--lime-deep);
+  border-radius: 16px;
+  background: rgba(203, 247, 74, 0.16);
+  color: var(--ink);
   cursor: pointer;
 }
 
@@ -1370,7 +1427,7 @@
 .food-helper-text {
   margin: 0;
   font-size: 0.8rem;
-  color: #888;
+  color: var(--muted);
 }
 
 .food-analyze-button {
@@ -1387,17 +1444,17 @@
 .food-review-title {
   margin: 0;
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #888;
+  letter-spacing: 0.1em;
+  color: var(--muted);
 }
 
 .food-advanced > summary {
   cursor: pointer;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #4ea1ff;
+  color: var(--lime-deep);
   padding: 0.3rem 0;
 }
 
@@ -1409,26 +1466,33 @@
 }
 
 code {
-  background: rgba(128, 128, 128, 0.2);
+  background: var(--surface-3);
   padding: 0.1em 0.3em;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
-/* Larger screens get more breathing room. */
+/* Larger screens: the app becomes a rounded device on the canvas. */
 @media (min-width: 640px) {
   .app {
-    padding: 4rem 1.5rem;
+    margin: 2rem auto 0;
+    padding: 3rem 1.75rem 2.5rem;
+    min-height: auto;
+    border-radius: 40px;
+    box-shadow: 0 40px 70px -30px rgba(20, 20, 25, 0.32);
+  }
+
+  .app-version {
+    background: transparent;
   }
 
   .app h1 {
-    font-size: 2.5rem;
+    font-size: 2.4rem;
   }
 
   .card {
     padding: 1.75rem;
   }
 
-  /* Must follow .card above: same specificity, so source order decides. */
   .training-day-card {
     padding: 1.25rem 1.5rem;
   }

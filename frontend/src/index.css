@@ -1,20 +1,43 @@
-:root {
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.5;
-  color-scheme: light dark;
-  color: #f3f4f6;
-  background-color: #16171d;
-  -webkit-font-smoothing: antialiased;
-}
+/* Fitness App design system (imported from Claude Design "Fitness Training and
+   Nutrition App"). Light canvas, ink + lime accent, Space Grotesk display type
+   over Instrument Sans body. All colours and type live here as tokens so the
+   whole app themes from one place. */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&display=swap');
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #08060d;
-    background-color: #fff;
-  }
+:root {
+  /* Type */
+  --font-body: 'Instrument Sans', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Space Grotesk', 'Instrument Sans', system-ui, sans-serif;
+
+  /* Palette */
+  --canvas: #e7e7e1; /* page behind the phone-width column */
+  --screen: #fafaf8; /* the app surface itself */
+  --ink: #17181b; /* near-black text and dark cards */
+  --ink-soft: #26272b; /* raised chips on dark cards */
+  --lime: #cbf74a; /* accent */
+  --lime-deep: #6b7a2e; /* lime that needs contrast on light */
+  --lime-tint: #dde7c4; /* lime wash for avatars / badges */
+  --lime-tint-text: #5c6b2e;
+  --muted: #9a9c98; /* secondary labels */
+  --muted-2: #6c6e68; /* body-weight secondary text */
+  --card: #ffffff;
+  --surface-2: #efefe9; /* inputs, search, quiet chips */
+  --surface-3: #f1f1ea; /* set cells, icon tiles */
+  --border: #edede7;
+  --border-2: #e6e6df;
+  --danger: #c2410c;
+  --danger-text: #b23a12;
+
+  color-scheme: light;
+  font-family: var(--font-body);
+  line-height: 1.5;
+  color: var(--ink);
+  background-color: var(--canvas);
+  -webkit-font-smoothing: antialiased;
 }
 
 body {
   margin: 0;
   min-height: 100svh;
+  background: var(--canvas);
 }
