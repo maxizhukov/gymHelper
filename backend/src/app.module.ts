@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
 import { DeployModule } from './deploy/deploy.module';
+import { FoodModule } from './food/food.module';
 import { HealthController } from './health.controller';
 import { StatsModule } from './stats/stats.module';
 import { TrainingModule } from './training/training.module';
@@ -19,6 +20,7 @@ import { WorkoutModule } from './workout/workout.module';
     TrainingModule,
     WorkoutModule,
     StatsModule,
+    FoodModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],

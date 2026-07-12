@@ -19,6 +19,9 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       DEPLOY_WEBHOOK_SECRET: ${DEPLOY_WEBHOOK_SECRET:-}
+      # Server-side OpenAI key for food parsing. Injected from the project-dir
+      # .env; it stays in the backend and is never sent to the browser.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     expose:
       - "3000" # internal only; not published to the host
     # /api/db-health round-trips a real query, so "healthy" means the database is

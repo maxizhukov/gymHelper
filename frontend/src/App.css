@@ -852,6 +852,35 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The Food tab: a description box, its submit button, then the parsed results
+   (which reuse the .stat-list rows above). */
+.food-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  text-align: left;
+}
+
+.food-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.75rem;
+  /* 1rem keeps mobile Safari from auto-zooming on focus, matching .field input. */
+  font-size: 1rem;
+  font-family: inherit;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.08);
+  color: inherit;
+  resize: vertical;
+}
+
+.food-input:focus {
+  outline: none;
+  border-color: #2e7d32;
+}
+
 code {
   background: rgba(128, 128, 128, 0.2);
   padding: 0.1em 0.3em;
