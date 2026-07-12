@@ -1,99 +1,396 @@
-import { useState } from 'react'
-import { parseFood, type ParsedMeal } from '../food'
+import { useCallback, useEffect, useState } from 'react'
+import { isAbort, type Loadable } from '../api'
+import {
+  MACRO_KEYS,
+  MEAL_TYPES,
+  NUTRIENT_META,
+  deleteEntry,
+  fetchDay,
+  fetchToday,
+  formatNutrient,
+  type DayLog,
+  type FoodEntry,
+  type MealType,
+  type NutrientMeta,
+  type Nutrients,
+  type Targets,
+} from '../food'
+import AddFood from './food/AddFood'
+import EntryForm, { seedFromEntry } from './food/EntryForm'
+import TargetsForm from './food/TargetsForm'
 
 /**
- * The Food tab. The user types a meal in plain language and the backend — using
- * its own OpenAI key — returns estimated nutrition. This component sends the
- * description and renders what comes back; it never sees or holds a key, and it
- * derives no numbers itself.
+ * The Food tab: a full nutrition tracker backed entirely by the database. It
+ * shows the selected day's saved items grouped by meal, the running totals for
+ * every tracked nutrient measured against the user's targets, and lets the user
+ * add (by text or label photo), edit, and delete items and set their targets.
+ * All source-of-truth data is read from and written to the backend — this
+ * component keeps only the transient view state.
  */
-export default function FoodPanel() {
-  const [description, setDescription] = useState('')
-  const [meal, setMeal] = useState<ParsedMeal | null>(null)
-  const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
-  const [error, setError] = useState('')
 
-  async function onSubmit(event: React.FormEvent) {
-    event.preventDefault()
-    const trimmed = description.trim()
-    if (trimmed.length === 0 || status === 'loading') return
+type View = 'day' | 'add' | 'targets'
 
-    setStatus('loading')
-    setError('')
-    try {
-      setMeal(await parseFood(trimmed))
-      setStatus('idle')
-    } catch (err) {
-      setMeal(null)
-      setError(err instanceof Error ? err.message : 'Something went wrong.')
-      setStatus('error')
+/** Shifts a YYYY-MM-DD date by whole days without tripping over time zones. */
+function addDays(date: string, delta: number): string {
+  const [y, m, d] = date.split('-').map(Number)
+  const shifted = new Date(Date.UTC(y, m - 1, d + delta))
+  return shifted.toISOString().slice(0, 10)
+}
+
+function friendlyDate(date: string, today: string): string {
+  if (date === today) return 'Today'
+  if (date === addDays(today, -1)) return 'Yesterday'
+  const [y, m, d] = date.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
+type Progress = {
+  pct: number
+  state: 'under' | 'good' | 'over'
+  goalText: string
+}
+
+/** Where a running total sits against its goal, range, or ceiling. */
+function progressFor(
+  meta: NutrientMeta,
+  value: number,
+  targets: Targets,
+): Progress {
+  if (meta.kind === 'target') {
+    const goal = targets[meta.target]
+    return {
+      pct: goal > 0 ? (value / goal) * 100 : 0,
+      state: value > goal * 1.2 ? 'over' : value >= goal * 0.99 ? 'good' : 'under',
+      goalText: `/ ${formatNutrient(goal, meta.decimals)} ${meta.unit}`,
     }
+  }
+  if (meta.kind === 'max') {
+    const max = targets[meta.max]
+    return {
+      pct: max > 0 ? (value / max) * 100 : 0,
+      state: value > max ? 'over' : 'good',
+      goalText: `≤ ${formatNutrient(max, meta.decimals)} ${meta.unit}`,
+    }
+  }
+  const min = targets[meta.min]
+  const max = targets[meta.max]
+  return {
+    pct: max > 0 ? (value / max) * 100 : 0,
+    state: value > max ? 'over' : value >= min ? 'good' : 'under',
+    goalText: `${formatNutrient(min, meta.decimals)}–${formatNutrient(max, meta.decimals)} ${meta.unit}`,
+  }
+}
+
+function Meter({
+  meta,
+  totals,
+  targets,
+}: {
+  meta: NutrientMeta
+  totals: Nutrients
+  targets: Targets
+}) {
+  const value = totals[meta.key] ?? 0
+  const progress = progressFor(meta, value, targets)
+  return (
+    <div className="food-meter">
+      <div className="food-meter-head">
+        <span className="food-meter-label">{meta.label}</span>
+        <span className="food-meter-value">
+          <strong>{formatNutrient(value, meta.decimals)}</strong>{' '}
+          <span className="food-meter-goal">{progress.goalText}</span>
+        </span>
+      </div>
+      <div className="food-meter-track">
+        <div
+          className="food-meter-fill"
+          data-state={progress.state}
+          style={{ width: `${Math.min(100, Math.max(0, progress.pct))}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+/** The full detail line for one saved item: every tracked nutrient it has. */
+function nutrientDetail(entry: FoodEntry): string {
+  return NUTRIENT_META.filter((meta) => entry.nutrients[meta.key] !== null)
+    .map(
+      (meta) =>
+        `${meta.label} ${formatNutrient(entry.nutrients[meta.key], meta.decimals)}${meta.unit === 'kcal' ? '' : meta.unit}`,
+    )
+    .join(' · ')
+}
+
+function EntryRow({
+  entry,
+  onEdit,
+  onDelete,
+}: {
+  entry: FoodEntry
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const quantity =
+    entry.quantity !== null
+      ? `${formatNutrient(entry.quantity, 0)}${entry.unit ? ` ${entry.unit}` : ''}`
+      : entry.unit ?? ''
+  return (
+    <li className="food-entry-row">
+      <div className="stat-row-main">
+        <p className="stat-row-title">
+          {entry.foodName}
+          {entry.brand && <span className="food-entry-brand"> · {entry.brand}</span>}
+        </p>
+        {quantity && <p className="stat-row-note">{quantity}</p>}
+        <p className="stat-row-note food-entry-detail">{nutrientDetail(entry)}</p>
+      </div>
+      <div className="stat-row-figures">
+        <p className="stat-row-value">
+          {formatNutrient(entry.nutrients.calories_kcal, 0)} kcal
+        </p>
+        <div className="food-entry-actions">
+          <button type="button" className="food-link-button" onClick={onEdit}>
+            Edit
+          </button>
+          <button
+            type="button"
+            className="food-link-button food-link-danger"
+            onClick={onDelete}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </li>
+  )
+}
+
+export default function FoodPanel() {
+  const [view, setView] = useState<View>('day')
+  const [date, setDate] = useState<string | null>(null)
+  const [today, setToday] = useState<string>('')
+  const [day, setDay] = useState<Loadable<DayLog>>({ status: 'loading' })
+  const [editingId, setEditingId] = useState<number | null>(null)
+
+  const load = useCallback(
+    async (target: string | null, signal: AbortSignal) => {
+      setDay({ status: 'loading' })
+      try {
+        const data = target === null ? await fetchToday() : await fetchDay(target)
+        if (signal.aborted) return
+        if (target === null) setToday(data.date)
+        setDay({ status: 'ready', data })
+      } catch (err) {
+        if (isAbort(err) || signal.aborted) return
+        setDay({
+          status: 'error',
+          message: err instanceof Error ? err.message : 'Could not load food.',
+        })
+      }
+    },
+    [],
+  )
+
+  useEffect(() => {
+    const controller = new AbortController()
+    load(date, controller.signal)
+    return () => controller.abort()
+  }, [date, load])
+
+  function reload() {
+    const controller = new AbortController()
+    load(date, controller.signal)
+  }
+
+  async function onDelete(entry: FoodEntry) {
+    if (!window.confirm(`Delete "${entry.foodName}"?`)) return
+    try {
+      await deleteEntry(entry.id)
+      reload()
+    } catch {
+      reload()
+    }
+  }
+
+  const currentDate = date ?? today
+
+  if (view === 'add') {
+    return (
+      <div className="food">
+        <AddFood
+          date={currentDate || today}
+          onEntrySaved={() => reload()}
+          onDone={() => {
+            setView('day')
+            reload()
+          }}
+        />
+      </div>
+    )
+  }
+
+  if (view === 'targets' && day.status === 'ready') {
+    return (
+      <div className="food">
+        <TargetsForm
+          targets={day.data.targets}
+          onSaved={() => {
+            setView('day')
+            reload()
+          }}
+          onCancel={() => setView('day')}
+        />
+      </div>
+    )
   }
 
   return (
     <div className="food">
-      <form className="food-form" onSubmit={onSubmit}>
-        <label className="label" htmlFor="food-description">
-          Describe your meal
-        </label>
-        <textarea
-          id="food-description"
-          className="food-input"
-          rows={3}
-          maxLength={500}
-          placeholder="e.g. 2 scrambled eggs, a slice of toast and a banana"
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-        />
+      <div className="food-date-nav">
         <button
-          className="nav-button"
-          type="submit"
-          disabled={status === 'loading' || description.trim().length === 0}
+          type="button"
+          className="food-nav-arrow"
+          aria-label="Previous day"
+          onClick={() => setDate(addDays(currentDate, -1))}
+          disabled={!currentDate}
         >
-          {status === 'loading' ? 'Parsing…' : 'Parse food'}
+          ‹
         </button>
-      </form>
+        <div className="food-date-label">
+          {currentDate ? friendlyDate(currentDate, today) : '…'}
+          <input
+            className="food-date-input"
+            type="date"
+            value={currentDate}
+            max={today || undefined}
+            onChange={(e) => setDate(e.target.value || null)}
+          />
+        </div>
+        <button
+          type="button"
+          className="food-nav-arrow"
+          aria-label="Next day"
+          onClick={() => setDate(addDays(currentDate, 1))}
+          disabled={!currentDate || currentDate >= today}
+        >
+          ›
+        </button>
+      </div>
 
-      {status === 'error' && (
+      {day.status === 'loading' && <p className="subtitle">Loading…</p>}
+
+      {day.status === 'error' && (
         <p className="error" role="alert">
-          {error}
+          {day.message}
         </p>
       )}
 
-      {meal !== null &&
-        (meal.items.length === 0 ? (
-          <p className="subtitle">No food found in that description.</p>
-        ) : (
-          <ul className="stat-list">
-            {meal.items.map((item, index) => (
-              <li className="stat-row" key={`${item.name}-${index}`}>
-                <div className="stat-row-main">
-                  <p className="stat-row-title">{item.name}</p>
-                  <p className="stat-row-note">
-                    {item.quantity ? `${item.quantity} · ` : ''}P{' '}
-                    {item.proteinGrams}g · C {item.carbsGrams}g · F{' '}
-                    {item.fatGrams}g
-                  </p>
-                </div>
-                <div className="stat-row-figures">
-                  <p className="stat-row-value">{item.calories} kcal</p>
-                </div>
-              </li>
-            ))}
-            <li className="stat-row" key="__totals">
-              <div className="stat-row-main">
-                <p className="stat-row-title">Total</p>
-                <p className="stat-row-note">
-                  P {meal.totals.proteinGrams}g · C {meal.totals.carbsGrams}g · F{' '}
-                  {meal.totals.fatGrams}g
-                </p>
+      {day.status === 'ready' && (
+        <>
+          <div className="food-actions">
+            <button
+              type="button"
+              className="nav-button"
+              onClick={() => setView('add')}
+            >
+              + Add food
+            </button>
+            <button
+              type="button"
+              className="nav-button food-button-secondary"
+              onClick={() => setView('targets')}
+            >
+              Targets
+            </button>
+          </div>
+
+          <section className="food-summary">
+            <div className="food-macros">
+              {MACRO_KEYS.map((key) => {
+                const meta = NUTRIENT_META.find((m) => m.key === key)
+                if (!meta) return null
+                return (
+                  <Meter
+                    key={key}
+                    meta={meta}
+                    totals={day.data.totals}
+                    targets={day.data.targets}
+                  />
+                )
+              })}
+            </div>
+
+            <details className="food-micros">
+              <summary>All nutrients</summary>
+              <div className="food-micros-list">
+                {NUTRIENT_META.filter((m) => !MACRO_KEYS.includes(m.key)).map(
+                  (meta) => (
+                    <Meter
+                      key={meta.key}
+                      meta={meta}
+                      totals={day.data.totals}
+                      targets={day.data.targets}
+                    />
+                  ),
+                )}
               </div>
-              <div className="stat-row-figures">
-                <p className="stat-row-value">{meal.totals.calories} kcal</p>
-              </div>
-            </li>
-          </ul>
-        ))}
+            </details>
+          </section>
+
+          {day.data.entries.length === 0 ? (
+            <p className="subtitle">No food logged for this day yet.</p>
+          ) : (
+            <section className="food-entries">
+              {[...MEAL_TYPES, null].map((meal) => {
+                const items = day.data.entries.filter(
+                  (e) => (e.mealType ?? null) === meal,
+                )
+                if (items.length === 0) return null
+                return (
+                  <div className="food-meal-group" key={meal ?? 'other'}>
+                    <h3 className="food-meal-heading">
+                      {meal ? mealLabel(meal) : 'Other'}
+                    </h3>
+                    <ul className="stat-list">
+                      {items.map((entry) =>
+                        editingId === entry.id ? (
+                          <li key={entry.id}>
+                            <EntryForm
+                              seed={seedFromEntry(entry)}
+                              onSaved={() => {
+                                setEditingId(null)
+                                reload()
+                              }}
+                              onCancel={() => setEditingId(null)}
+                            />
+                          </li>
+                        ) : (
+                          <EntryRow
+                            key={entry.id}
+                            entry={entry}
+                            onEdit={() => setEditingId(entry.id)}
+                            onDelete={() => onDelete(entry)}
+                          />
+                        ),
+                      )}
+                    </ul>
+                  </div>
+                )
+              })}
+            </section>
+          )}
+        </>
+      )}
     </div>
   )
+}
+
+function mealLabel(meal: MealType): string {
+  return meal.charAt(0).toUpperCase() + meal.slice(1)
 }

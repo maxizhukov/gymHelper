@@ -12,6 +12,11 @@ async function bootstrap() {
   // All routes are served under /api.
   app.setGlobalPrefix('api');
 
+  // A nutrition-label photo is posted as an inline base64 data URL, which is a
+  // few megabytes — well past Express's 100kb JSON default. Raise the limit so
+  // /food/parse-photo can accept a phone photo; the DTO bounds the field again.
+  app.useBodyParser('json', { limit: '12mb' });
+
   // Allow the frontend dev server to call this API during development.
   // Configurable via CORS_ORIGIN (comma-separated) for other environments.
   // `credentials` is required so the browser sends the session cookie.
