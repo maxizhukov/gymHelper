@@ -955,6 +955,18 @@
   font-size: 0.85rem;
 }
 
+.food-toast {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 0.6rem;
+  border: 1px solid #2e7d32;
+  background: rgba(46, 125, 50, 0.12);
+  color: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: center;
+}
+
 /* ── Progress meters ─────────────────────────────────────────────────────── */
 .food-summary {
   display: flex;

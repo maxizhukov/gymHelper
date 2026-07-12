@@ -34,11 +34,6 @@ export default function HomePage() {
         </Link>
       )}
 
-      <div className="card status-ok">
-        <p className="label">Signed in as</p>
-        <p className="message">{user.username}</p>
-      </div>
-
       <Tabs.Root
         className="home-tabs"
         value={tab}

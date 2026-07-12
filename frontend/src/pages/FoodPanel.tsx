@@ -245,6 +245,15 @@ export default function FoodPanel() {
   const [today, setToday] = useState<string>('')
   const [day, setDay] = useState<Loadable<DayLog>>({ status: 'loading' })
   const [editingId, setEditingId] = useState<number | null>(null)
+  // A brief confirmation shown after a save; it clears itself so the day view
+  // never carries a stale banner.
+  const [toast, setToast] = useState('')
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(''), 2500)
+    return () => clearTimeout(timer)
+  }, [toast])
 
   const load = useCallback(
     async (target: string | null, signal: AbortSignal) => {
@@ -291,9 +300,17 @@ export default function FoodPanel() {
   if (view === 'add') {
     return (
       <div className="food">
+        {toast && (
+          <p className="food-toast" role="status">
+            {toast}
+          </p>
+        )}
         <AddFood
           date={currentDate || today}
-          onEntrySaved={() => reload()}
+          onEntrySaved={() => {
+            reload()
+            setToast('Saved to today')
+          }}
           onDone={() => {
             setView('day')
             reload()
@@ -320,6 +337,11 @@ export default function FoodPanel() {
 
   return (
     <div className="food">
+      {toast && (
+        <p className="food-toast" role="status">
+          {toast}
+        </p>
+      )}
       <div className="food-date-nav">
         <button
           type="button"

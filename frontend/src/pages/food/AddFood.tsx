@@ -109,8 +109,12 @@ export default function AddFood({
   }
 
   function onDraftSaved(key: number, entry: FoodEntry) {
-    setDrafts((prev) => prev.filter((d) => d.key !== key))
+    const remaining = drafts.filter((d) => d.key !== key)
+    setDrafts(remaining)
     onEntrySaved(entry)
+    // Nothing left to review — drop straight back to Today's food instead of
+    // stranding the user on the scan screen. Any remaining drafts stay visible.
+    if (remaining.length === 0) onDone()
   }
 
   const parsing = status === 'parsing'
@@ -235,6 +239,9 @@ export default function AddFood({
             onSaved={(entry) => {
               setAddingManual(false)
               onEntrySaved(entry)
+              // Manual entry is a single item — return to Today's food unless
+              // parsed drafts are still awaiting review.
+              if (drafts.length === 0) onDone()
             }}
             onCancel={() => setAddingManual(false)}
           />
