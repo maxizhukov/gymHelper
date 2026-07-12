@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import {
+  MACRO_KEYS,
   MEAL_TYPES,
   NUTRIENT_META,
   createEntry,
@@ -15,12 +16,23 @@ import {
 } from '../../food'
 
 /**
- * The one editor used for both a model draft and an already-saved entry: the
- * user reviews and edits every field — food name, quantity, meal, and all
- * tracked nutrients — before anything is written. Nothing here is persisted
- * until the user presses Save, which posts to the create or update endpoint;
- * the server stores it and returns the stored row, which the caller renders.
+ * The one editor used for both a model draft and an already-saved entry. To
+ * stay approachable it shows only the basics up front — food name, brand,
+ * quantity, and the four headline macros — and tucks the meal, date/time, every
+ * micronutrient and notes behind an "Edit all nutrients" disclosure. Nothing is
+ * persisted until the user presses the save button, which posts to the create
+ * or update endpoint; the server stores it and returns the stored row, which
+ * the caller renders.
  */
+
+/** The four macros shown as editable fields up front: calories, protein, carbs, fat. */
+const BASIC_NUTRIENTS = (['calories_kcal', 'protein_g', 'carbs_g', 'fat_g'] as const)
+  .map((key) => NUTRIENT_META.find((m) => m.key === key))
+  .filter((m): m is (typeof NUTRIENT_META)[number] => m !== undefined)
+/** Everything else — micronutrients — lives behind the disclosure. */
+const ADVANCED_NUTRIENTS = NUTRIENT_META.filter(
+  (m) => !MACRO_KEYS.includes(m.key),
+)
 
 type NutrientStrings = Record<NutrientKey, string>
 
@@ -141,10 +153,14 @@ export default function EntryForm({
   seed,
   onSaved,
   onCancel,
+  saveLabel = 'Save',
+  cancelLabel = 'Cancel',
 }: {
   seed: EntrySeed
   onSaved: (entry: FoodEntry) => void
   onCancel: () => void
+  saveLabel?: string
+  cancelLabel?: string
 }) {
   const [form, setForm] = useState<FormState>(seed.form)
   const [status, setStatus] = useState<'idle' | 'saving'>('idle')
@@ -237,27 +253,6 @@ export default function EntryForm({
           />
         </div>
         <div className="food-form-col">
-          <label className="label" htmlFor="entry-meal">
-            Meal
-          </label>
-          <select
-            id="entry-meal"
-            className="food-text-input"
-            value={form.mealType}
-            onChange={(e) => setField('mealType', e.target.value as MealType | '')}
-          >
-            <option value="">—</option>
-            {MEAL_TYPES.map((meal) => (
-              <option key={meal} value={meal}>
-                {meal}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="food-form-row">
-        <div className="food-form-col">
           <label className="label" htmlFor="entry-quantity">
             Quantity
           </label>
@@ -287,36 +282,8 @@ export default function EntryForm({
         </div>
       </div>
 
-      <div className="food-form-row">
-        <div className="food-form-col">
-          <label className="label" htmlFor="entry-date">
-            Date
-          </label>
-          <input
-            id="entry-date"
-            className="food-text-input"
-            type="date"
-            value={form.date}
-            onChange={(e) => setField('date', e.target.value)}
-          />
-        </div>
-        <div className="food-form-col">
-          <label className="label" htmlFor="entry-time">
-            Time
-          </label>
-          <input
-            id="entry-time"
-            className="food-text-input"
-            type="time"
-            value={form.time}
-            onChange={(e) => setField('time', e.target.value)}
-          />
-        </div>
-      </div>
-
-      <p className="label food-nutrient-heading">Nutrients (leave blank if unknown)</p>
       <div className="food-nutrient-grid">
-        {NUTRIENT_META.map((meta) => (
+        {BASIC_NUTRIENTS.map((meta) => (
           <div className="food-nutrient-field" key={meta.key}>
             <label className="food-nutrient-label" htmlFor={`n-${meta.key}`}>
               {meta.label} <span className="food-nutrient-unit">{meta.unit}</span>
@@ -335,6 +302,94 @@ export default function EntryForm({
         ))}
       </div>
 
+      <details className="food-advanced">
+        <summary>Edit all nutrients</summary>
+        <div className="food-advanced-body">
+          <div className="food-form-row">
+            <div className="food-form-col">
+              <label className="label" htmlFor="entry-meal">
+                Meal
+              </label>
+              <select
+                id="entry-meal"
+                className="food-text-input"
+                value={form.mealType}
+                onChange={(e) =>
+                  setField('mealType', e.target.value as MealType | '')
+                }
+              >
+                <option value="">—</option>
+                {MEAL_TYPES.map((meal) => (
+                  <option key={meal} value={meal}>
+                    {meal}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="food-form-col">
+              <label className="label" htmlFor="entry-date">
+                Date
+              </label>
+              <input
+                id="entry-date"
+                className="food-text-input"
+                type="date"
+                value={form.date}
+                onChange={(e) => setField('date', e.target.value)}
+              />
+            </div>
+            <div className="food-form-col">
+              <label className="label" htmlFor="entry-time">
+                Time
+              </label>
+              <input
+                id="entry-time"
+                className="food-text-input"
+                type="time"
+                value={form.time}
+                onChange={(e) => setField('time', e.target.value)}
+              />
+            </div>
+          </div>
+
+          <p className="label food-nutrient-heading">
+            Other nutrients (leave blank if unknown)
+          </p>
+          <div className="food-nutrient-grid">
+            {ADVANCED_NUTRIENTS.map((meta) => (
+              <div className="food-nutrient-field" key={meta.key}>
+                <label className="food-nutrient-label" htmlFor={`n-${meta.key}`}>
+                  {meta.label}{' '}
+                  <span className="food-nutrient-unit">{meta.unit}</span>
+                </label>
+                <input
+                  id={`n-${meta.key}`}
+                  className="food-text-input"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="any"
+                  value={form.nutrients[meta.key]}
+                  onChange={(e) => setNutrient(meta.key, e.target.value)}
+                />
+              </div>
+            ))}
+          </div>
+
+          <label className="label" htmlFor="entry-notes">
+            Notes
+          </label>
+          <textarea
+            id="entry-notes"
+            className="food-text-input"
+            rows={2}
+            maxLength={1000}
+            value={form.notes}
+            onChange={(e) => setField('notes', e.target.value)}
+          />
+        </div>
+      </details>
+
       {seed.assumptions.length > 0 && (
         <div className="food-assumptions">
           <p className="label">Assumptions</p>
@@ -345,18 +400,6 @@ export default function EntryForm({
           </ul>
         </div>
       )}
-
-      <label className="label" htmlFor="entry-notes">
-        Notes
-      </label>
-      <textarea
-        id="entry-notes"
-        className="food-text-input"
-        rows={2}
-        maxLength={1000}
-        value={form.notes}
-        onChange={(e) => setField('notes', e.target.value)}
-      />
 
       {error && (
         <p className="error" role="alert">
@@ -371,14 +414,14 @@ export default function EntryForm({
           onClick={onCancel}
           disabled={status === 'saving'}
         >
-          Cancel
+          {cancelLabel}
         </button>
         <button
           type="submit"
-          className="nav-button"
+          className="nav-button food-button-primary"
           disabled={status === 'saving'}
         >
-          {status === 'saving' ? 'Saving…' : 'Save'}
+          {status === 'saving' ? 'Saving…' : saveLabel}
         </button>
       </div>
     </form>

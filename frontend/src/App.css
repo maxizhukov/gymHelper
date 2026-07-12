@@ -1237,6 +1237,165 @@
   font-size: 0.85rem;
 }
 
+/* ── Primary action button ───────────────────────────────────────────────── */
+.food-button-primary {
+  background: #2e7d32;
+  border-color: #2e7d32;
+  color: #fff;
+}
+
+.food-button-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ── Today summary: calories card + macro chips ──────────────────────────── */
+.food-calorie-card {
+  border: 1px solid #333;
+  border-radius: 14px;
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: rgba(46, 125, 50, 0.06);
+}
+
+.food-calorie-title {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+}
+
+.food-calorie-value {
+  margin: 0;
+  font-size: 1.9rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.food-calorie-goal {
+  font-size: 1rem;
+  font-weight: 400;
+  color: #888;
+}
+
+.food-calorie-remaining {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.food-macro-chips {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+}
+
+.food-macro-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 0.6rem 0.7rem;
+}
+
+.food-macro-chip-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #888;
+}
+
+.food-macro-chip-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 1rem;
+}
+
+.food-macro-chip-goal {
+  color: #888;
+  font-size: 0.8rem;
+}
+
+/* ── Add food card ───────────────────────────────────────────────────────── */
+.food-add-head {
+  display: flex;
+}
+
+.food-add-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  border: 1px solid #333;
+  border-radius: 14px;
+  padding: 1.1rem 1.25rem;
+}
+
+.food-add-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.food-scan-button {
+  display: inline-block;
+  text-align: center;
+  padding: 0.85rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border: 1px dashed #2e7d32;
+  border-radius: 8px;
+  background: rgba(46, 125, 50, 0.08);
+  color: inherit;
+  cursor: pointer;
+}
+
+.food-scan-button input {
+  display: none;
+}
+
+.food-helper-text {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.food-analyze-button {
+  margin-top: 0.25rem;
+}
+
+/* ── Review-before-saving cards ──────────────────────────────────────────── */
+.food-review {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.food-review-title {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+}
+
+.food-advanced > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #4ea1ff;
+  padding: 0.3rem 0;
+}
+
+.food-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.5rem;
+}
+
 code {
   background: rgba(128, 128, 128, 0.2);
   padding: 0.1em 0.3em;

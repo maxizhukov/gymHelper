@@ -381,7 +381,7 @@ export class FoodService implements OnModuleInit {
       { role: 'system', content: this.photoSystemPrompt() },
       { role: 'user', content: userContent },
     ]);
-    return this.parseDraftItems(content);
+    return this.parseDraftItems(content, true);
   }
 
   /** Legacy shape for the old /food/parse endpoint: macros only. */
@@ -508,22 +508,33 @@ export class FoodService implements OnModuleInit {
       '{"items":[ ITEM, ... ]}. Usually one ITEM for the product in the photo. ' +
       'Each ITEM has: "food_name" (string), "brand" (string or null), ' +
       '"quantity" (number or null = amount consumed), "unit" (string or null), ' +
-      '"meal_type" (breakfast|lunch|dinner|snack or null), the nutrient fields ' +
+      '"meal_type" (breakfast|lunch|dinner|snack or null), "energy_kj" (number ' +
+      'or null = the energy in KILOJOULES from the label), the nutrient fields ' +
       this.nutrientSchemaLines() +
       ', "confidence" (high|medium|low), "assumptions" (array of strings), and ' +
-      '"needs_user_review" (boolean). CRITICAL: the label lists values per ' +
-      'serving or per 100g/100ml. Scale them to the amount ACTUALLY consumed. ' +
-      'Example: label is per 100ml and the item is a 330ml can -> multiply by ' +
-      '3.3. If the label is per serving and the package holds several servings ' +
-      'and the whole package was eaten, multiply by the number of servings. ' +
-      'Record how you scaled in assumptions. Use null for nutrients not on the ' +
-      'label. If the amount consumed is uncertain, set needs_user_review to ' +
-      'true and explain in assumptions. If the image has no readable label, ' +
-      'return {"items":[]}.'
+      '"needs_user_review" (boolean).\n' +
+      'ENERGY — read this carefully. Labels (including German "Brennwert" / ' +
+      '"Nährwertdeklaration") print energy TWICE: kilojoules (kJ) and ' +
+      'kilocalories (kcal). "calories_kcal" MUST be the kcal value, NEVER the ' +
+      'kJ value. Example label "Energy 194 kJ / 46 kcal" -> calories_kcal is ' +
+      '46, not 194; put 194 in energy_kj. If BOTH kJ and kcal are shown, always ' +
+      'use the kcal number for calories_kcal. If ONLY kJ is shown, convert with ' +
+      'kcal = kJ / 4.184 and add an assumption saying you converted from kJ. ' +
+      'Never copy a kJ number into calories_kcal.\n' +
+      'SCALING — the label lists values per serving or per 100g/100ml. Scale ' +
+      'BOTH energy_kj and calories_kcal (and every nutrient) to the amount ' +
+      'ACTUALLY consumed. Example: label is per 100ml and the item is a 330ml ' +
+      'can -> multiply by 3.3 (46 kcal becomes ~152 kcal). If the label is per ' +
+      'serving and the whole multi-serving package was eaten, multiply by the ' +
+      'number of servings. Record how you scaled in assumptions.\n' +
+      'Use null for nutrients not on the label. If the amount consumed or ' +
+      'package size is unclear, set needs_user_review to true and explain in ' +
+      'assumptions. Prefer exact label numbers over guessing. If the image has ' +
+      'no readable label, return {"items":[]}.'
     );
   }
 
-  private parseDraftItems(content: string): DraftItem[] {
+  private parseDraftItems(content: string, isLabel = false): DraftItem[] {
     let parsed: unknown;
     try {
       parsed = JSON.parse(content);
@@ -543,16 +554,19 @@ export class FoodService implements OnModuleInit {
         (item): item is Record<string, unknown> =>
           typeof item === 'object' && item !== null,
       )
-      .map((item) => this.mapDraftItem(item))
+      .map((item) => this.mapDraftItem(item, isLabel))
       .filter((item) => item.foodName.length > 0);
   }
 
-  private mapDraftItem(item: Record<string, unknown>): DraftItem {
+  private mapDraftItem(
+    item: Record<string, unknown>,
+    isLabel: boolean,
+  ): DraftItem {
     const nutrients = {} as Nutrients;
     for (const key of NUTRIENT_KEYS) {
       nutrients[key] = this.num(item[key]);
     }
-    return {
+    const draft: DraftItem = {
       foodName: this.text(item.food_name),
       brand: this.textOrNull(item.brand),
       quantity: this.num(item.quantity),
@@ -563,6 +577,51 @@ export class FoodService implements OnModuleInit {
       assumptions: this.stringList(item.assumptions),
       needsUserReview: item.needs_user_review === true,
     };
+    // Nutrition labels list energy as both kJ and kcal; only the second is a
+    // calorie. The model can grab the larger kJ number by mistake, so correct
+    // it server-side before the draft is ever shown or saved.
+    if (isLabel) this.correctLabelEnergy(draft, this.num(item.energy_kj));
+    return draft;
+  }
+
+  /**
+   * Keeps `calories_kcal` a true kilocalorie value, never a kilojoule one.
+   *
+   * European "Nährwertdeklaration" / "Brennwert" labels print energy twice,
+   * e.g. `194 kJ / 46 kcal`. 1 kcal = 4.184 kJ, so a genuine kcal figure is
+   * roughly a quarter of the kJ figure. Rules applied here (values are already
+   * scaled to the amount consumed, so their ratio is preserved):
+   *  - kcal present and clearly a real kcal (≈ kJ ÷ 4.184): keep it.
+   *  - kcal present but ≈ the kJ number (model misread kJ as kcal): replace it
+   *    with kJ ÷ 4.184 and record the correction.
+   *  - only kJ present: convert kJ ÷ 4.184 and record the assumption.
+   * Never stores kJ directly as calories.
+   *
+   * Worked examples (per 100ml label, 330ml can → ×3.3):
+   *  - 194 kJ / 46 kcal → 46 × 3.3 ≈ 152 kcal   (not 640 and not 194)
+   *  - 180 kJ only      → 180 ÷ 4.184 × 3.3 ≈ 142 kcal
+   */
+  private correctLabelEnergy(draft: DraftItem, energyKj: number | null): void {
+    if (energyKj === null || energyKj <= 0) return;
+    const convertedKcal = Math.round((energyKj / 4.184) * 10) / 10;
+    const kcal = draft.nutrients.calories_kcal;
+
+    if (kcal === null) {
+      draft.nutrients.calories_kcal = convertedKcal;
+      draft.assumptions.push(
+        `Label showed only ${energyKj} kJ; converted to ${convertedKcal} kcal (kJ ÷ 4.184).`,
+      );
+      return;
+    }
+
+    // A real kcal is ~24% of the kJ number. If the reported "kcal" is within
+    // 15% of the kJ number instead, it is the kJ value mislabeled — correct it.
+    if (Math.abs(kcal - energyKj) <= energyKj * 0.15) {
+      draft.nutrients.calories_kcal = convertedKcal;
+      draft.assumptions.push(
+        `Reported ${kcal} kcal matched the ${energyKj} kJ figure; corrected to ${convertedKcal} kcal (kJ ÷ 4.184).`,
+      );
+    }
   }
 
   // ── Row mapping and coercion ────────────────────────────────────────────────

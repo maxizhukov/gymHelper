@@ -11,6 +11,7 @@ import {
   type DayLog,
   type FoodEntry,
   type MealType,
+  type NutrientKey,
   type NutrientMeta,
   type Nutrients,
   type Targets,
@@ -116,6 +117,73 @@ function Meter({
     </div>
   )
 }
+
+/** The headline calories card: eaten vs. goal, with the remainder spelled out. */
+function CaloriesCard({
+  title,
+  totals,
+  targets,
+}: {
+  title: string
+  totals: Nutrients
+  targets: Targets
+}) {
+  const value = totals.calories_kcal ?? 0
+  const goal = targets.calories_kcal
+  const remaining = goal - value
+  const pct = goal > 0 ? Math.min(100, Math.max(0, (value / goal) * 100)) : 0
+  return (
+    <div className="food-calorie-card">
+      <p className="food-calorie-title">{title}</p>
+      <p className="food-calorie-value">
+        <strong>{formatNutrient(value, 0)}</strong>
+        <span className="food-calorie-goal"> / {formatNutrient(goal, 0)} kcal</span>
+      </p>
+      <div className="food-meter-track">
+        <div
+          className="food-meter-fill"
+          data-state={value > goal * 1.05 ? 'over' : 'good'}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <p className="food-calorie-remaining">
+        {remaining >= 0
+          ? `${formatNutrient(remaining, 0)} kcal remaining`
+          : `${formatNutrient(-remaining, 0)} kcal over`}
+      </p>
+    </div>
+  )
+}
+
+/** A compact macro chip: eaten vs. goal for one of protein / carbs / fat. */
+function MacroChip({
+  meta,
+  totals,
+  targets,
+}: {
+  meta: NutrientMeta
+  totals: Nutrients
+  targets: Targets
+}) {
+  const value = totals[meta.key] ?? 0
+  const goal = meta.kind === 'target' ? targets[meta.target] : 0
+  return (
+    <div className="food-macro-chip">
+      <span className="food-macro-chip-label">{meta.label}</span>
+      <span className="food-macro-chip-value">
+        <strong>{formatNutrient(value, meta.decimals)}</strong>
+        <span className="food-macro-chip-goal">
+          {' '}
+          / {formatNutrient(goal, meta.decimals)}
+          {meta.unit}
+        </span>
+      </span>
+    </div>
+  )
+}
+
+/** The three macro chips shown under the calories card. */
+const MACRO_CHIP_KEYS: NutrientKey[] = ['protein_g', 'carbs_g', 'fat_g']
 
 /** The full detail line for one saved item: every tracked nutrient it has. */
 function nutrientDetail(entry: FoodEntry): string {
@@ -311,12 +379,18 @@ export default function FoodPanel() {
           </div>
 
           <section className="food-summary">
-            <div className="food-macros">
-              {MACRO_KEYS.map((key) => {
+            <CaloriesCard
+              title={currentDate ? friendlyDate(currentDate, today) : 'Today'}
+              totals={day.data.totals}
+              targets={day.data.targets}
+            />
+
+            <div className="food-macro-chips">
+              {MACRO_CHIP_KEYS.map((key) => {
                 const meta = NUTRIENT_META.find((m) => m.key === key)
                 if (!meta) return null
                 return (
-                  <Meter
+                  <MacroChip
                     key={key}
                     meta={meta}
                     totals={day.data.totals}
@@ -327,7 +401,7 @@ export default function FoodPanel() {
             </div>
 
             <details className="food-micros">
-              <summary>All nutrients</summary>
+              <summary>More nutrients</summary>
               <div className="food-micros-list">
                 {NUTRIENT_META.filter((m) => !MACRO_KEYS.includes(m.key)).map(
                   (meta) => (
