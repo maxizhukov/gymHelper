@@ -507,11 +507,20 @@ export class FoodService implements OnModuleInit {
       'You read nutrition-label photos. Return STRICT JSON: ' +
       '{"items":[ ITEM, ... ]}. Usually one ITEM for the product in the photo. ' +
       'Each ITEM has: "food_name" (string), "brand" (string or null), ' +
-      '"quantity" (number or null = amount consumed), "unit" (string or null), ' +
-      '"meal_type" (breakfast|lunch|dinner|snack or null), "energy_kj" (number ' +
-      'or null = the energy in KILOJOULES from the label), the nutrient fields ' +
+      '"meal_type" (breakfast|lunch|dinner|snack or null), ' +
+      '"label_basis_amount" (number or null = the reference amount the label ' +
+      'nutrients are stated for, e.g. 100 for "per 100ml"/"pro 100ml", or the ' +
+      'portion size for a per-portion table), "label_basis_unit" (string or ' +
+      'null = unit of that reference amount, e.g. "ml" or "g"), ' +
+      '"consumed_quantity" (number or null = how much the user actually ' +
+      'consumed), "consumed_unit" (string or null = unit of the consumed ' +
+      'amount, e.g. "ml" or "g"), "energy_kj" (number or null = energy in ' +
+      'KILOJOULES from the label, for the label basis amount), the nutrient ' +
+      'fields ' +
       this.nutrientSchemaLines() +
-      ', "confidence" (high|medium|low), "assumptions" (array of strings), and ' +
+      ' — each stated FOR THE LABEL BASIS AMOUNT (e.g. the "per 100ml" value), ' +
+      'NOT pre-multiplied, or null if not on the label, "confidence" ' +
+      '(high|medium|low), "assumptions" (array of strings), and ' +
       '"needs_user_review" (boolean).\n' +
       'ENERGY — read this carefully. Labels (including German "Brennwert" / ' +
       '"Nährwertdeklaration") print energy TWICE: kilojoules (kJ) and ' +
@@ -521,16 +530,19 @@ export class FoodService implements OnModuleInit {
       'use the kcal number for calories_kcal. If ONLY kJ is shown, convert with ' +
       'kcal = kJ / 4.184 and add an assumption saying you converted from kJ. ' +
       'Never copy a kJ number into calories_kcal.\n' +
-      'SCALING — the label lists values per serving or per 100g/100ml. Scale ' +
-      'BOTH energy_kj and calories_kcal (and every nutrient) to the amount ' +
-      'ACTUALLY consumed. Example: label is per 100ml and the item is a 330ml ' +
-      'can -> multiply by 3.3 (46 kcal becomes ~152 kcal). If the label is per ' +
-      'serving and the whole multi-serving package was eaten, multiply by the ' +
-      'number of servings. Record how you scaled in assumptions.\n' +
-      'Use null for nutrients not on the label. If the amount consumed or ' +
-      'package size is unclear, set needs_user_review to true and explain in ' +
-      'assumptions. Prefer exact label numbers over guessing. If the image has ' +
-      'no readable label, return {"items":[]}.'
+      'BASIS & AMOUNT — read "label_basis_amount"/"label_basis_unit" from the ' +
+      'label, e.g. "per 100ml"/"pro 100ml"/"je 100ml"/"per 100 ml" -> 100 + ' +
+      '"ml"; "per 100g"/"pro 100g"/"je 100g" -> 100 + "g". If only a ' +
+      'per-portion table is shown, use the portion size as the basis. If BOTH a ' +
+      'per-100 and a per-portion column are shown, PREFER the per-100 basis ' +
+      'because it is more reliable. Put the RAW per-basis numbers in the ' +
+      'nutrient fields; do NOT multiply them yourself — the server scales them ' +
+      'to the consumed amount. Set "consumed_quantity"/"consumed_unit" from the ' +
+      'note or package (e.g. a 330ml can -> 330 + "ml"). If the consumed amount ' +
+      'is unclear, set "consumed_quantity" to null and "needs_user_review" to ' +
+      'true.\n' +
+      'Use null for nutrients not on the label. Prefer exact label numbers over ' +
+      'guessing. If the image has no readable label, return {"items":[]}.'
     );
   }
 
@@ -580,8 +592,81 @@ export class FoodService implements OnModuleInit {
     // Nutrition labels list energy as both kJ and kcal; only the second is a
     // calorie. The model can grab the larger kJ number by mistake, so correct
     // it server-side before the draft is ever shown or saved.
-    if (isLabel) this.correctLabelEnergy(draft, this.num(item.energy_kj));
+    if (isLabel) {
+      this.correctLabelEnergy(draft, this.num(item.energy_kj));
+      // Label nutrients arrive per the label basis (e.g. per 100ml). Scale them
+      // deterministically to the amount actually consumed — never rely on the
+      // model to do the multiplication.
+      this.scaleLabelToConsumed(draft, item);
+    }
     return draft;
+  }
+
+  /**
+   * Turns per-basis label values (e.g. "per 100ml") into the values for the
+   * amount actually consumed, so the draft always represents what was eaten.
+   *
+   *   multiplier = consumed_quantity / label_basis_amount
+   *
+   * Every non-null nutrient is multiplied; nulls stay null. Rounding keeps up
+   * to three decimals so display is clean but decimals are preserved
+   * (e.g. 10.5g sugar × 2.5 = 26.25g). Cases:
+   *  - basis + consumed known: scale, set quantity/unit to the consumed amount.
+   *  - basis known, consumed unclear: keep per-basis values, set quantity to
+   *    the basis amount, flag needs_user_review.
+   *  - no usable basis: the numbers already represent the consumed amount
+   *    (model fallback), so leave them untouched.
+   */
+  private scaleLabelToConsumed(
+    draft: DraftItem,
+    item: Record<string, unknown>,
+  ): void {
+    const basisAmount = this.num(item.label_basis_amount);
+    const basisUnit = this.textOrNull(item.label_basis_unit);
+    const consumedQuantity = this.num(item.consumed_quantity) ?? draft.quantity;
+    const consumedUnit = this.textOrNull(item.consumed_unit) ?? draft.unit;
+
+    // Reflect the consumed amount on the draft whenever we know it.
+    if (consumedQuantity !== null) {
+      draft.quantity = consumedQuantity;
+      if (consumedUnit !== null) draft.unit = consumedUnit;
+    }
+
+    // No usable label basis: the model's numbers already represent the amount
+    // consumed, so there is nothing to scale.
+    if (basisAmount === null || basisAmount <= 0) return;
+
+    // Consumed amount unclear: keep the per-basis values but say so and ask the
+    // user to confirm rather than silently treating per-100 as the total.
+    if (consumedQuantity === null || consumedQuantity <= 0) {
+      draft.quantity = basisAmount;
+      draft.unit = basisUnit ?? draft.unit;
+      draft.needsUserReview = true;
+      draft.assumptions.push(
+        `Consumed amount was unclear; values are per ${this.amountLabel(basisAmount, basisUnit)}.`,
+      );
+      return;
+    }
+
+    const multiplier = consumedQuantity / basisAmount;
+    if (multiplier !== 1) {
+      for (const key of NUTRIENT_KEYS) {
+        const value = draft.nutrients[key];
+        if (value !== null) {
+          draft.nutrients[key] = Math.round(value * multiplier * 1000) / 1000;
+        }
+      }
+      draft.assumptions.push(
+        `Nutrition label values were per ${this.amountLabel(basisAmount, basisUnit)} ` +
+          `and were scaled to ${this.amountLabel(consumedQuantity, consumedUnit ?? basisUnit)} consumed amount.`,
+      );
+    }
+    draft.unit = consumedUnit ?? basisUnit ?? draft.unit;
+  }
+
+  /** A compact "250ml" / "100g" amount label, or just the number if unitless. */
+  private amountLabel(amount: number, unit: string | null): string {
+    return unit ? `${amount}${unit}` : `${amount}`;
   }
 
   /**
@@ -589,17 +674,18 @@ export class FoodService implements OnModuleInit {
    *
    * European "Nährwertdeklaration" / "Brennwert" labels print energy twice,
    * e.g. `194 kJ / 46 kcal`. 1 kcal = 4.184 kJ, so a genuine kcal figure is
-   * roughly a quarter of the kJ figure. Rules applied here (values are already
-   * scaled to the amount consumed, so their ratio is preserved):
+   * roughly a quarter of the kJ figure. This runs on the raw per-basis label
+   * values, before scaleLabelToConsumed multiplies to the consumed amount:
    *  - kcal present and clearly a real kcal (≈ kJ ÷ 4.184): keep it.
    *  - kcal present but ≈ the kJ number (model misread kJ as kcal): replace it
    *    with kJ ÷ 4.184 and record the correction.
    *  - only kJ present: convert kJ ÷ 4.184 and record the assumption.
    * Never stores kJ directly as calories.
    *
-   * Worked examples (per 100ml label, 330ml can → ×3.3):
-   *  - 194 kJ / 46 kcal → 46 × 3.3 ≈ 152 kcal   (not 640 and not 194)
-   *  - 180 kJ only      → 180 ÷ 4.184 × 3.3 ≈ 142 kcal
+   * Worked examples (per-100ml label; scaling to the consumed amount happens
+   * afterwards):
+   *  - 194 kJ / 46 kcal → 46 kcal   (not 194)
+   *  - 180 kJ only      → 180 ÷ 4.184 ≈ 43 kcal
    */
   private correctLabelEnergy(draft: DraftItem, energyKj: number | null): void {
     if (energyKj === null || energyKj <= 0) return;
