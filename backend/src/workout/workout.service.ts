@@ -44,9 +44,6 @@ import { TrainingConfigService } from '../training/training-config.service';
  * the sets of a workout already recorded.
  */
 
-/** How many sets each exercise gets. Snapshotted onto the session at start. */
-const SETS_PER_EXERCISE = 4;
-
 // Bounds mirror the CHECK constraints below; both exist on purpose. The DTO is
 // the first gate, the constraint the last one for anything reaching the table
 // another way.
@@ -846,7 +843,7 @@ export class WorkoutService implements OnModuleInit {
              (user_id, training_day_id, planned_reps, rest_seconds, sets_per_exercise)
            VALUES ($1, $2, $3, $4, $5)
            RETURNING id`,
-          [userId, day.id, config.reps, config.restPeriod, SETS_PER_EXERCISE],
+          [userId, day.id, config.reps, config.restPeriod, config.setsPerExercise],
         );
         const id = inserted.rows[0]?.id;
         if (id === undefined) {

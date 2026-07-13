@@ -24,6 +24,7 @@ export default function ProfilePage() {
   // start empty and are filled in once the saved config arrives.
   const [restPeriod, setRestPeriod] = useState<number | null>(null)
   const [reps, setReps] = useState<number | null>(null)
+  const [setsPerExercise, setSetsPerExercise] = useState<number | null>(null)
   const [configState, setConfigState] = useState<ConfigState>('idle')
   const [configMessage, setConfigMessage] = useState('')
 
@@ -31,6 +32,7 @@ export default function ProfilePage() {
     if (config.status !== 'ready') return
     setRestPeriod(config.data.restPeriod)
     setReps(config.data.reps)
+    setSetsPerExercise(config.data.setsPerExercise)
   }, [config])
 
   if (!user) return null
@@ -81,9 +83,9 @@ export default function ProfilePage() {
   async function handleSaveConfig() {
     // The browser blocks an empty required field, but a null here would still
     // serialize as JSON `null` and be rejected by the server — stop it first.
-    if (restPeriod === null || reps === null) {
+    if (restPeriod === null || reps === null || setsPerExercise === null) {
       setConfigState('error')
-      setConfigMessage('Both settings are required.')
+      setConfigMessage('All settings are required.')
       return
     }
 
@@ -92,9 +94,14 @@ export default function ProfilePage() {
 
     try {
       // Trust the response over what was typed: the server is the source of truth.
-      const saved = await saveTrainingConfig({ restPeriod, reps })
+      const saved = await saveTrainingConfig({
+        restPeriod,
+        reps,
+        setsPerExercise,
+      })
       setRestPeriod(saved.restPeriod)
       setReps(saved.reps)
+      setSetsPerExercise(saved.setsPerExercise)
       setConfigState('success')
       setConfigMessage('Training settings saved.')
     } catch (err) {
@@ -193,6 +200,37 @@ export default function ProfilePage() {
             </NumberField.Root>
             <Field.Error className="field-error" match="valueMissing">
               Reps is required.
+            </Field.Error>
+          </Field.Root>
+
+          <Field.Root name="setsPerExercise" className="field">
+            <Field.Label>Sets per exercise</Field.Label>
+            <NumberField.Root
+              value={setsPerExercise}
+              onValueChange={setSetsPerExercise}
+              min={1}
+              max={20}
+              step={1}
+              required
+            >
+              <NumberField.Group className="number-field-group">
+                <NumberField.Decrement
+                  className="number-field-button"
+                  aria-label="Decrease sets per exercise"
+                >
+                  −
+                </NumberField.Decrement>
+                <NumberField.Input />
+                <NumberField.Increment
+                  className="number-field-button"
+                  aria-label="Increase sets per exercise"
+                >
+                  +
+                </NumberField.Increment>
+              </NumberField.Group>
+            </NumberField.Root>
+            <Field.Error className="field-error" match="valueMissing">
+              Sets per exercise is required.
             </Field.Error>
           </Field.Root>
 

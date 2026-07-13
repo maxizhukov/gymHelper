@@ -4,11 +4,13 @@ import { DatabaseService } from '../database/database.service';
 
 /**
  * Per-user training settings. `restPeriod` is the pause between sets in
- * seconds; `reps` is the target repetitions per set.
+ * seconds; `reps` is the target repetitions per set; `setsPerExercise` is how
+ * many sets each exercise gets in a workout.
  */
 export interface TrainingConfig {
   restPeriod: number;
   reps: number;
+  setsPerExercise: number;
 }
 
 /**
@@ -19,11 +21,13 @@ export interface TrainingConfig {
 const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   restPeriod: 90,
   reps: 12,
+  setsPerExercise: 6,
 };
 
 interface TrainingConfigRow {
   rest_period: number;
   reps: number;
+  sets_per_exercise: number;
 }
 
 @Injectable()
@@ -50,19 +54,33 @@ export class TrainingConfigService implements OnModuleInit {
         updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
       )
     `);
+
+    // Added after the table shipped: rows written before this column existed
+    // are backfilled to the default via the column DEFAULT. Bounds mirror the
+    // workout_sessions.sets_per_exercise CHECK so a saved config always yields
+    // a startable workout.
+    await this.db.query(`
+      ALTER TABLE training_configs
+        ADD COLUMN IF NOT EXISTS sets_per_exercise INTEGER NOT NULL DEFAULT 6
+          CHECK (sets_per_exercise BETWEEN 1 AND 20)
+    `);
   }
 
   /** The user's settings, or the defaults when they have never saved any. */
   async getConfig(userId: number): Promise<TrainingConfig> {
     const result = await this.db.query<TrainingConfigRow>(
-      'SELECT rest_period, reps FROM training_configs WHERE user_id = $1',
+      'SELECT rest_period, reps, sets_per_exercise FROM training_configs WHERE user_id = $1',
       [userId],
     );
     const row = result.rows[0];
     if (!row) {
       return { ...DEFAULT_TRAINING_CONFIG };
     }
-    return { restPeriod: row.rest_period, reps: row.reps };
+    return {
+      restPeriod: row.rest_period,
+      reps: row.reps,
+      setsPerExercise: row.sets_per_exercise,
+    };
   }
 
   /**
@@ -74,14 +92,15 @@ export class TrainingConfigService implements OnModuleInit {
     config: TrainingConfig,
   ): Promise<TrainingConfig> {
     const result = await this.db.query<TrainingConfigRow>(
-      `INSERT INTO training_configs (user_id, rest_period, reps)
-       VALUES ($1, $2, $3)
+      `INSERT INTO training_configs (user_id, rest_period, reps, sets_per_exercise)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT (user_id) DO UPDATE
-         SET rest_period = EXCLUDED.rest_period,
-             reps        = EXCLUDED.reps,
-             updated_at  = now()
-       RETURNING rest_period, reps`,
-      [userId, config.restPeriod, config.reps],
+         SET rest_period       = EXCLUDED.rest_period,
+             reps              = EXCLUDED.reps,
+             sets_per_exercise = EXCLUDED.sets_per_exercise,
+             updated_at        = now()
+       RETURNING rest_period, reps, sets_per_exercise`,
+      [userId, config.restPeriod, config.reps, config.setsPerExercise],
     );
 
     // The upsert always returns a row; guard rather than assume, since a miss
@@ -90,6 +109,10 @@ export class TrainingConfigService implements OnModuleInit {
     if (!row) {
       throw new Error(`Could not save training config for user ${userId}.`);
     }
-    return { restPeriod: row.rest_period, reps: row.reps };
+    return {
+      restPeriod: row.rest_period,
+      reps: row.reps,
+      setsPerExercise: row.sets_per_exercise,
+    };
   }
 }

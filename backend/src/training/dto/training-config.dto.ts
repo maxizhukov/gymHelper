@@ -3,6 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 export interface TrainingConfigDto {
   restPeriod: number;
   reps: number;
+  setsPerExercise: number;
 }
 
 // Bounds keep hostile or nonsensical input out of the database. Rest is in
@@ -11,6 +12,10 @@ const REST_PERIOD_MIN = 0;
 const REST_PERIOD_MAX = 3600;
 const REPS_MIN = 1;
 const REPS_MAX = 100;
+// Mirrors the workout_sessions.sets_per_exercise CHECK so a saved config can
+// always start a workout.
+const SETS_PER_EXERCISE_MIN = 1;
+const SETS_PER_EXERCISE_MAX = 20;
 
 /** Rejects anything that is not a whole number inside [min, max]. */
 function requireInteger(
@@ -45,7 +50,10 @@ export function validateTrainingConfigDto(body: unknown): TrainingConfigDto {
     throw new BadRequestException('Request body must be a JSON object.');
   }
 
-  const { restPeriod, reps } = body as Record<string, unknown>;
+  const { restPeriod, reps, setsPerExercise } = body as Record<
+    string,
+    unknown
+  >;
 
   return {
     restPeriod: requireInteger(
@@ -55,5 +63,11 @@ export function validateTrainingConfigDto(body: unknown): TrainingConfigDto {
       REST_PERIOD_MAX,
     ),
     reps: requireInteger(reps, 'reps', REPS_MIN, REPS_MAX),
+    setsPerExercise: requireInteger(
+      setsPerExercise,
+      'setsPerExercise',
+      SETS_PER_EXERCISE_MIN,
+      SETS_PER_EXERCISE_MAX,
+    ),
   };
 }

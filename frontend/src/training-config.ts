@@ -7,10 +7,14 @@ import { errorMessage, isAbort, type Loadable } from './api'
  * no user id is ever sent, the server derives it from the session cookie.
  */
 
-/** `restPeriod` is the pause between sets in seconds; `reps` per set. */
+/**
+ * `restPeriod` is the pause between sets in seconds; `reps` per set;
+ * `setsPerExercise` is how many sets each exercise gets in a workout.
+ */
 export type TrainingConfig = {
   restPeriod: number
   reps: number
+  setsPerExercise: number
 }
 
 const LOAD_ERROR = 'Could not load your training settings. Please try again.'

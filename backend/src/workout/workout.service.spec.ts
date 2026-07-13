@@ -30,7 +30,7 @@ if (!TEST_DATABASE_URL) {
 
 jest.setTimeout(60_000);
 
-const SETS_PER_EXERCISE = 4;
+const SETS_PER_EXERCISE = 6;
 
 /** The queue as the user would read it, top to bottom. */
 const names = (workout: { exercises: { name: string }[] }): string[] =>
