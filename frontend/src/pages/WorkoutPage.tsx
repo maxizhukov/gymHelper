@@ -215,9 +215,12 @@ function ActiveWorkout({
     <main className="app workout">
       <header className="workout-header">
         <p className="label">{workout.dayName}</p>
-        <p className="workout-clock" aria-label="Workout duration">
-          {formatDuration(elapsedSeconds(anchored))}
-        </p>
+        <div className="workout-elapsed">
+          <p className="label">Total time</p>
+          <p className="workout-clock" aria-label="Total training time">
+            {formatDuration(elapsedSeconds(anchored))}
+          </p>
+        </div>
       </header>
 
       {/* Informational only: these exercises are queued at the end, not dropped. */}

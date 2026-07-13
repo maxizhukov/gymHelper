@@ -377,6 +377,14 @@
   letter-spacing: 0.05em;
 }
 
+.workout-elapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  text-align: right;
+}
+
 .workout-clock {
   margin: 0;
   font-family: var(--font-display);
