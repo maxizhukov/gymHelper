@@ -2,27 +2,18 @@ import { useState } from 'react'
 import { askAssistant } from '../../food'
 
 /**
- * A compact, collapsible chat card for the Food tab. The user asks nutrition
- * questions in plain language and the server-side assistant answers using their
- * own logged food, targets and history — the OpenAI key never reaches the
- * browser. Messages live only in this component's transient state; nothing here
- * is a source of truth, so they clear on reload.
+ * A collapsible chat card for the Food tab. The user asks nutrition questions in
+ * plain language and the server-side assistant answers using their own logged
+ * food, targets and history — the OpenAI key never reaches the browser. Messages
+ * live only in this component's transient state; nothing here is a source of
+ * truth, so they clear on reload.
  */
 
 type ChatMessage = {
   id: number
   role: 'user' | 'assistant'
   text: string
-  suggestions?: string[]
 }
-
-/** Tap-to-ask starters shown before the first question. */
-const QUICK_QUESTIONS = [
-  'What should I eat next?',
-  'What am I missing today?',
-  'Suggest a dinner',
-  'How is my week going?',
-]
 
 export default function NutritionAssistant({ date }: { date: string | null }) {
   const [open, setOpen] = useState(false)
@@ -45,12 +36,7 @@ export default function NutritionAssistant({ date }: { date: string | null }) {
       const reply = await askAssistant(message, date)
       setMessages((prev) => [
         ...prev,
-        {
-          id: userId + 1,
-          role: 'assistant',
-          text: reply.answer,
-          suggestions: reply.suggestions,
-        },
+        { id: userId + 1, role: 'assistant', text: reply.answer },
       ])
       setNextId((id) => id + 1)
     } catch (err) {
@@ -62,18 +48,6 @@ export default function NutritionAssistant({ date }: { date: string | null }) {
     }
   }
 
-  // Suggestions to offer as chips: the latest assistant follow-ups if we have
-  // any, otherwise the starter questions.
-  const lastAssistant = [...messages]
-    .reverse()
-    .find((m) => m.role === 'assistant')
-  const chips =
-    lastAssistant?.suggestions && lastAssistant.suggestions.length > 0
-      ? lastAssistant.suggestions
-      : messages.length === 0
-        ? QUICK_QUESTIONS
-        : []
-
   return (
     <section className="food-assistant">
       <button
@@ -83,7 +57,7 @@ export default function NutritionAssistant({ date }: { date: string | null }) {
         onClick={() => setOpen((v) => !v)}
       >
         <span className="food-assistant-toggle-label">
-          <span aria-hidden="true">✨</span> Ask Nutrition Assistant
+          <span aria-hidden="true">✨</span> Nutrition Assistant
         </span>
         <span className="food-assistant-chevron" aria-hidden="true">
           {open ? '▾' : '▸'}
@@ -92,12 +66,9 @@ export default function NutritionAssistant({ date }: { date: string | null }) {
 
       {open && (
         <div className="food-assistant-body">
-          {messages.length === 0 && (
-            <p className="food-assistant-intro">
-              Ask about today’s plan, what you’re missing, or a meal idea. Answers
-              use your own logged food and targets.
-            </p>
-          )}
+          <p className="food-assistant-intro">
+            Ask about today’s food, remaining targets, or your history.
+          </p>
 
           {messages.length > 0 && (
             <div className="food-assistant-thread">
@@ -123,22 +94,6 @@ export default function NutritionAssistant({ date }: { date: string | null }) {
             </p>
           )}
 
-          {chips.length > 0 && (
-            <div className="food-assistant-chips">
-              {chips.map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  className="food-assistant-chip"
-                  onClick={() => ask(q)}
-                  disabled={loading}
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-          )}
-
           <form
             className="food-assistant-input"
             onSubmit={(e) => {
@@ -146,17 +101,24 @@ export default function NutritionAssistant({ date }: { date: string | null }) {
               ask(input)
             }}
           >
-            <input
-              type="text"
+            <textarea
+              className="food-assistant-textarea"
               value={input}
+              rows={2}
               placeholder="Ask the nutrition assistant…"
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  ask(input)
+                }
+              }}
               disabled={loading}
               aria-label="Message the nutrition assistant"
             />
             <button
               type="submit"
-              className="nav-button food-button-small"
+              className="nav-button food-assistant-send"
               disabled={loading || input.trim().length === 0}
             >
               {loading ? 'Thinking…' : 'Ask'}

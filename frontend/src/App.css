@@ -1474,45 +1474,37 @@
   font-size: 0.85rem;
 }
 
-.food-assistant-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-}
-
-.food-assistant-chip {
-  padding: 0.45rem 0.75rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  border: 1px solid var(--border-2);
-  border-radius: 999px;
-  background: var(--surface-2);
-  color: var(--ink);
-  cursor: pointer;
-}
-
-.food-assistant-chip:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 .food-assistant-input {
   display: flex;
+  flex-direction: column;
   gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
-.food-assistant-input input {
-  flex: 1;
+.food-assistant-textarea {
+  width: 100%;
   min-width: 0;
-  padding: 0.6rem 0.8rem;
+  min-height: 48px;
+  box-sizing: border-box;
+  padding: 0.7rem 0.85rem;
   border: 1px solid var(--border-2);
   border-radius: 14px;
   background: var(--surface-2);
   color: var(--ink);
-  font-size: 0.9rem;
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.4;
+  resize: vertical;
 }
 
-.food-assistant-input .nav-button {
+.food-assistant-textarea::placeholder {
+  color: var(--muted-2);
+}
+
+.food-assistant-send {
+  width: 100%;
   white-space: nowrap;
 }
 
