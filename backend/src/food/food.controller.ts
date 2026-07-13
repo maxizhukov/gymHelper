@@ -18,6 +18,7 @@ import { readSessionToken } from '../auth/cookie.util';
 import { SessionService } from '../auth/session.service';
 import type { Targets } from './food.nutrients';
 import {
+  validateAssistantChatDto,
   validateEntryDto,
   validateParsePhotoDto,
   validateParseTextDto,
@@ -25,6 +26,7 @@ import {
 } from './dto/food.dto';
 import {
   FoodService,
+  type AssistantReply,
   type DayLog,
   type DraftItem,
   type FoodEntry,
@@ -152,6 +154,21 @@ export class FoodController {
       throw new BadRequestException('Invalid entry id.');
     }
     await this.foodService.deleteEntry(user.id, Number(id));
+  }
+
+  /**
+   * Answers a nutrition question grounded in the user's own food data. The
+   * session decides whose data is used; the OpenAI key stays server-side.
+   */
+  @Post('assistant/chat')
+  @HttpCode(200)
+  async assistantChat(
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<AssistantReply> {
+    const user = await this.currentUser(req);
+    const { message, date, historyDays } = validateAssistantChatDto(body);
+    return this.foodService.assistantChat(user.id, message, date, historyDays);
   }
 
   /**

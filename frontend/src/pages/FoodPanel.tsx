@@ -18,6 +18,7 @@ import {
 } from '../food'
 import AddFood from './food/AddFood'
 import EntryForm, { seedFromEntry } from './food/EntryForm'
+import NutritionAssistant from './food/NutritionAssistant'
 import TargetsForm from './food/TargetsForm'
 
 /**
@@ -438,6 +439,8 @@ export default function FoodPanel() {
               </div>
             </details>
           </section>
+
+          <NutritionAssistant date={date} />
 
           {day.data.entries.length === 0 ? (
             <p className="subtitle">No food logged for this day yet.</p>

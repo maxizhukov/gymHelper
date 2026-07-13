@@ -20,6 +20,7 @@ import {
   type MealType,
   type NutrientKey,
   type Nutrients,
+  type TargetKey,
   type Targets,
 } from './food.nutrients';
 
@@ -44,6 +45,41 @@ const OPENAI_MODEL = 'gpt-4o-mini';
 
 /** Bound the wait so a hung upstream cannot hold a request open forever. */
 const REQUEST_TIMEOUT_MS = 30_000;
+
+/** How each tracked nutrient relates to its goal — a single figure to reach, a
+ * healthy band, or a ceiling. Mirrors the frontend's NUTRIENT_META so the
+ * assistant can describe "remaining" the same way the UI renders progress. */
+type NutrientGoal =
+  | { kind: 'target'; target: TargetKey }
+  | { kind: 'range'; min: TargetKey; max: TargetKey }
+  | { kind: 'max'; max: TargetKey };
+
+interface AssistantNutrient {
+  key: NutrientKey;
+  label: string;
+  unit: string;
+  goal: NutrientGoal;
+}
+
+const ASSISTANT_NUTRIENTS: AssistantNutrient[] = [
+  { key: 'calories_kcal', label: 'Calories', unit: 'kcal', goal: { kind: 'target', target: 'calories_kcal' } },
+  { key: 'protein_g', label: 'Protein', unit: 'g', goal: { kind: 'target', target: 'protein_g' } },
+  { key: 'fat_g', label: 'Fat', unit: 'g', goal: { kind: 'target', target: 'fat_g' } },
+  { key: 'carbs_g', label: 'Carbs', unit: 'g', goal: { kind: 'target', target: 'carbs_g' } },
+  { key: 'fiber_g', label: 'Fiber', unit: 'g', goal: { kind: 'range', min: 'fiber_g_min', max: 'fiber_g_max' } },
+  { key: 'water_l', label: 'Water', unit: 'L', goal: { kind: 'range', min: 'water_l_min', max: 'water_l_max' } },
+  { key: 'salt_g', label: 'Salt', unit: 'g', goal: { kind: 'range', min: 'salt_g_min', max: 'salt_g_max' } },
+  { key: 'added_sugar_g', label: 'Added sugar', unit: 'g', goal: { kind: 'max', max: 'added_sugar_g_max' } },
+  { key: 'saturated_fat_g', label: 'Saturated fat', unit: 'g', goal: { kind: 'max', max: 'saturated_fat_g_max' } },
+  { key: 'omega3_epa_dha_mg', label: 'Omega-3 (EPA+DHA)', unit: 'mg', goal: { kind: 'range', min: 'omega3_epa_dha_mg_min', max: 'omega3_epa_dha_mg_max' } },
+  { key: 'vitamin_d_iu', label: 'Vitamin D', unit: 'IU', goal: { kind: 'range', min: 'vitamin_d_iu_min', max: 'vitamin_d_iu_max' } },
+  { key: 'magnesium_mg', label: 'Magnesium', unit: 'mg', goal: { kind: 'range', min: 'magnesium_mg_min', max: 'magnesium_mg_max' } },
+  { key: 'calcium_mg', label: 'Calcium', unit: 'mg', goal: { kind: 'target', target: 'calcium_mg' } },
+  { key: 'potassium_mg', label: 'Potassium', unit: 'mg', goal: { kind: 'range', min: 'potassium_mg_min', max: 'potassium_mg_max' } },
+  { key: 'iron_mg', label: 'Iron', unit: 'mg', goal: { kind: 'target', target: 'iron_mg' } },
+  { key: 'zinc_mg', label: 'Zinc', unit: 'mg', goal: { kind: 'range', min: 'zinc_mg_min', max: 'zinc_mg_max' } },
+  { key: 'creatine_g', label: 'Creatine', unit: 'g', goal: { kind: 'target', target: 'creatine_g' } },
+];
 
 /** One editable draft item the model produced; not yet saved. */
 export interface DraftItem {
@@ -101,6 +137,13 @@ export interface EntryInput {
   rawInput: string | null;
   assumptions: string[];
   notes: string | null;
+}
+
+/** The nutrition assistant's reply: a message plus optional tap-to-ask
+ * follow-up questions the UI renders as quick chips. */
+export interface AssistantReply {
+  answer: string;
+  suggestions: string[];
 }
 
 /** Kept for the legacy /food/parse endpoint the old frontend still calls. */
@@ -407,6 +450,257 @@ export class FoodService implements OnModuleInit {
         { calories: 0, proteinGrams: 0, carbsGrams: 0, fatGrams: 0 },
       ),
     };
+  }
+
+  // ── Nutrition assistant ─────────────────────────────────────────────────────
+
+  /**
+   * Answers a free-text nutrition question grounded in the user's own data. It
+   * assembles a compact context — the selected day's targets, totals, remaining
+   * amounts and logged items, plus a summarized view of the last N days — and
+   * asks the model to reply with practical, specific guidance. Nothing is
+   * persisted; the browser keeps the transient chat. The user id comes from the
+   * session, so the assistant only ever sees the caller's own food.
+   */
+  async assistantChat(
+    userId: number,
+    message: string,
+    date: string | null,
+    historyDays: number,
+  ): Promise<AssistantReply> {
+    const day = date
+      ? await this.getDay(userId, date)
+      : await this.getToday(userId);
+    const history = await this.historySummary(userId, day.date, historyDays);
+    const context = this.assistantContext(day, history);
+    const content = await this.callOpenAI([
+      { role: 'system', content: this.assistantSystemPrompt() },
+      { role: 'user', content: `${context}\n\nUser question: ${message}` },
+    ]);
+    return this.parseAssistantReply(content);
+  }
+
+  /**
+   * Daily totals over the last `windowDays` days ending at `endDate`, reduced to
+   * a per-logged-day average per nutrient. Summarized in SQL so a large history
+   * never ships raw rows to the prompt.
+   */
+  private async historySummary(
+    userId: number,
+    endDate: string,
+    windowDays: number,
+  ): Promise<{ windowDays: number; daysLogged: number; averages: Nutrients }> {
+    const sums = NUTRIENT_KEYS.map(
+      (key) => `COALESCE(SUM(${key}), 0) AS ${key}`,
+    ).join(',\n         ');
+    const result = await this.db.query(
+      `SELECT ${sums}
+         FROM food_entries
+        WHERE user_id = $1
+          AND date >= ($2::date - ($3::int - 1))
+          AND date <= $2::date
+        GROUP BY date`,
+      [userId, endDate, windowDays],
+    );
+    const rows = result.rows;
+    const daysLogged = rows.length;
+    const averages = {} as Nutrients;
+    for (const key of NUTRIENT_KEYS) {
+      if (daysLogged === 0) {
+        averages[key] = null;
+        continue;
+      }
+      let sum = 0;
+      for (const row of rows) sum += this.num(row[key]) ?? 0;
+      averages[key] = Math.round((sum / daysLogged) * 100) / 100;
+    }
+    return { windowDays, daysLogged, averages };
+  }
+
+  /** The structured, human-readable context block handed to the model. */
+  private assistantContext(
+    day: DayLog,
+    history: { windowDays: number; daysLogged: number; averages: Nutrients },
+  ): string {
+    const lines: string[] = [];
+    lines.push(`Selected day: ${day.date}.`);
+    lines.push('Targets, consumed so far, and remaining today:');
+    for (const nutrient of ASSISTANT_NUTRIENTS) {
+      lines.push(`- ${this.nutrientStatusLine(nutrient, day.totals, day.targets)}`);
+    }
+    lines.push('');
+    lines.push(`Food logged this day (${day.entries.length} item(s)):`);
+    lines.push(this.entriesSummary(day.entries));
+    lines.push('');
+    lines.push(
+      `History (last ${history.windowDays} days; ${history.daysLogged} day(s) with logged food):`,
+    );
+    if (history.daysLogged === 0) {
+      lines.push('No food logged in this window.');
+    } else {
+      lines.push('Average per logged day:');
+      for (const nutrient of ASSISTANT_NUTRIENTS) {
+        const avg = history.averages[nutrient.key];
+        if (avg !== null) {
+          lines.push(`- ${nutrient.label}: ${this.fmtNum(avg)} ${nutrient.unit}`);
+        }
+      }
+      const gaps = this.recurringGaps(history.averages, day.targets);
+      if (gaps.length > 0) {
+        lines.push('Recurring gaps:');
+        for (const gap of gaps) lines.push(`- ${gap}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  /** One "consumed vs goal, with remaining" line for a nutrient. */
+  private nutrientStatusLine(
+    nutrient: AssistantNutrient,
+    totals: Nutrients,
+    targets: Targets,
+  ): string {
+    const value = totals[nutrient.key] ?? 0;
+    const u = nutrient.unit;
+    if (nutrient.goal.kind === 'target') {
+      const target = targets[nutrient.goal.target];
+      const remaining = Math.round((target - value) * 100) / 100;
+      const tail =
+        remaining > 0
+          ? `${this.fmtNum(remaining)} ${u} remaining`
+          : remaining < 0
+            ? `${this.fmtNum(-remaining)} ${u} over`
+            : 'target met';
+      return `${nutrient.label}: ${this.fmtNum(value)} / ${this.fmtNum(target)} ${u} target — ${tail}`;
+    }
+    if (nutrient.goal.kind === 'max') {
+      const max = targets[nutrient.goal.max];
+      const over = Math.round((value - max) * 100) / 100;
+      const tail = over > 0 ? `${this.fmtNum(over)} ${u} over` : 'within limit';
+      return `${nutrient.label}: ${this.fmtNum(value)} ${u} (ceiling ≤ ${this.fmtNum(max)}) — ${tail}`;
+    }
+    const min = targets[nutrient.goal.min];
+    const max = targets[nutrient.goal.max];
+    const tail =
+      value < min
+        ? `${this.fmtNum(Math.round((min - value) * 100) / 100)} ${u} below the ${this.fmtNum(min)} minimum`
+        : value > max
+          ? `${this.fmtNum(Math.round((value - max) * 100) / 100)} ${u} over the ${this.fmtNum(max)} maximum`
+          : 'within range';
+    return `${nutrient.label}: ${this.fmtNum(value)} ${u} (range ${this.fmtNum(min)}–${this.fmtNum(max)}) — ${tail}`;
+  }
+
+  /** Nutrients whose multi-day average sits outside their goal, as short notes. */
+  private recurringGaps(averages: Nutrients, targets: Targets): string[] {
+    const gaps: string[] = [];
+    for (const nutrient of ASSISTANT_NUTRIENTS) {
+      const avg = averages[nutrient.key];
+      if (avg === null) continue;
+      const label = nutrient.label.toLowerCase();
+      const u = nutrient.unit;
+      if (nutrient.goal.kind === 'target') {
+        const target = targets[nutrient.goal.target];
+        if (target > 0 && avg < target * 0.85) {
+          gaps.push(
+            `Low ${label}: averaged ${this.fmtNum(avg)} ${u} vs ${this.fmtNum(target)} ${u} target`,
+          );
+        }
+      } else if (nutrient.goal.kind === 'max') {
+        const max = targets[nutrient.goal.max];
+        if (avg > max) {
+          gaps.push(
+            `High ${label}: averaged ${this.fmtNum(avg)} ${u} vs ${this.fmtNum(max)} ${u} ceiling`,
+          );
+        }
+      } else {
+        const min = targets[nutrient.goal.min];
+        const max = targets[nutrient.goal.max];
+        if (avg < min) {
+          gaps.push(
+            `Low ${label}: averaged ${this.fmtNum(avg)} ${u} vs ${this.fmtNum(min)} ${u} minimum`,
+          );
+        } else if (avg > max) {
+          gaps.push(
+            `High ${label}: averaged ${this.fmtNum(avg)} ${u} vs ${this.fmtNum(max)} ${u} maximum`,
+          );
+        }
+      }
+    }
+    return gaps;
+  }
+
+  /** A compact bullet list of the day's items, or a note when empty. */
+  private entriesSummary(entries: FoodEntry[]): string {
+    if (entries.length === 0) return 'No food logged for this day yet.';
+    return entries
+      .map((entry) => {
+        const meal = entry.mealType
+          ? entry.mealType.charAt(0).toUpperCase() + entry.mealType.slice(1)
+          : 'Other';
+        const brand = entry.brand ? ` (${entry.brand})` : '';
+        const qty =
+          entry.quantity !== null
+            ? ` ${this.fmtNum(entry.quantity)}${entry.unit ? ` ${entry.unit}` : ''}`
+            : '';
+        const kcal = entry.nutrients.calories_kcal;
+        const protein = entry.nutrients.protein_g;
+        const figures = [
+          kcal !== null ? `${this.fmtNum(kcal)} kcal` : 'kcal unknown',
+          protein !== null ? `${this.fmtNum(protein)}g protein` : null,
+        ].filter((v): v is string => v !== null);
+        const flag = entry.confidence === 'low' ? ' [low confidence]' : '';
+        return `- ${meal}: ${entry.foodName}${brand}${qty} — ${figures.join(', ')}${flag}`;
+      })
+      .join('\n');
+  }
+
+  private assistantSystemPrompt(): string {
+    return (
+      'You are a practical nutrition assistant inside a food tracker. Use only ' +
+      'the provided user food data, targets, totals, and history. Be concise, ' +
+      'specific, and safe. You are not a doctor. Do not diagnose. For ' +
+      'supplements/medical concerns, recommend checking with a doctor/pharmacist ' +
+      'and blood tests.\n' +
+      'Reply with STRICT JSON: {"answer": string, "suggestions": string[]}. ' +
+      '"answer" is your reply as short, friendly, mobile-readable text; you may ' +
+      'use short bullet lines starting with "- ". "suggestions" is 0 to 4 very ' +
+      'short follow-up questions the user might tap next, or an empty array.\n' +
+      'Ground every claim in the data above: do not invent foods the user has ' +
+      'not logged, and if a value is null/unknown, say it is unknown rather than ' +
+      'guessing. When suggesting what to eat, base it on the remaining targets. ' +
+      'Recommend a food-first approach; only mention supplements when asked, and ' +
+      'never claim the user has a deficiency — say what looks low from tracked ' +
+      'intake and suggest discussing blood tests with a professional. Add a brief ' +
+      'one-line disclaimer only when the question is about supplements, vitamins ' +
+      'to buy, or possible deficiencies — not on every reply.'
+    );
+  }
+
+  private parseAssistantReply(content: string): AssistantReply {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      throw new ServiceUnavailableException(
+        'The nutrition assistant returned an unexpected response.',
+      );
+    }
+    const obj =
+      typeof parsed === 'object' && parsed !== null
+        ? (parsed as Record<string, unknown>)
+        : {};
+    const answer = this.text(obj.answer);
+    if (!answer) {
+      throw new ServiceUnavailableException(
+        'The nutrition assistant returned an empty response.',
+      );
+    }
+    return { answer, suggestions: this.stringList(obj.suggestions).slice(0, 4) };
+  }
+
+  /** A short numeric string: rounded to 2 decimals, no trailing zeros. */
+  private fmtNum(value: number): string {
+    return String(Math.round(value * 100) / 100);
   }
 
   // ── OpenAI plumbing ─────────────────────────────────────────────────────────

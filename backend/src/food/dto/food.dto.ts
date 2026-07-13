@@ -116,6 +116,45 @@ export function validateParsePhotoDto(body: unknown): ParsePhotoDto {
   };
 }
 
+// ── Nutrition assistant ───────────────────────────────────────────────────────
+
+const MESSAGE_MAX = 1000;
+const HISTORY_DAYS_DEFAULT = 14;
+const HISTORY_DAYS_MIN = 1;
+const HISTORY_DAYS_MAX = 30;
+
+export interface AssistantChatDto {
+  message: string;
+  date: string | null;
+  historyDays: number;
+}
+
+export function validateAssistantChatDto(body: unknown): AssistantChatDto {
+  const obj = requireObject(body);
+  if (typeof obj.message !== 'string') {
+    throw new BadRequestException('A message is required.');
+  }
+  const message = obj.message.trim();
+  if (message.length === 0) {
+    throw new BadRequestException('A message is required.');
+  }
+  if (message.length > MESSAGE_MAX) {
+    throw new BadRequestException(
+      `A message must be ${MESSAGE_MAX} characters or fewer.`,
+    );
+  }
+  const rawDays = optionalNumber(obj.historyDays, 'historyDays');
+  const historyDays =
+    rawDays === null
+      ? HISTORY_DAYS_DEFAULT
+      : Math.min(HISTORY_DAYS_MAX, Math.max(HISTORY_DAYS_MIN, Math.round(rawDays)));
+  return {
+    message,
+    date: optionalDate(obj.date),
+    historyDays,
+  };
+}
+
 // ── Targets ───────────────────────────────────────────────────────────────────
 
 export function validateTargetsDto(body: unknown): Targets {

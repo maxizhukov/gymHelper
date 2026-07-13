@@ -266,6 +266,29 @@ export async function updateEntry(
   ).entry
 }
 
+/** The nutrition assistant's reply: a message and optional quick follow-ups. */
+export type AssistantReply = {
+  answer: string
+  suggestions: string[]
+}
+
+/**
+ * Asks the server-side nutrition assistant a question. The backend grounds the
+ * answer in the authenticated user's own food data and calls OpenAI with the
+ * key that never leaves the server; `date` null means the current day.
+ */
+export async function askAssistant(
+  message: string,
+  date: string | null,
+): Promise<AssistantReply> {
+  const reply = await sendJson<{ answer: string; suggestions?: string[] }>(
+    '/api/food/assistant/chat',
+    'POST',
+    { message, date },
+  )
+  return { answer: reply.answer, suggestions: reply.suggestions ?? [] }
+}
+
 export async function deleteEntry(id: number): Promise<void> {
   const res = await fetch(`/api/food/entries/${id}`, {
     method: 'DELETE',
