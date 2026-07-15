@@ -32,14 +32,28 @@ jobs:
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
           # Pull the just-pushed commit on the server and (re)build the stack.
+          #
+          # The root disk is small, so BuildKit's parallel builds run the volume
+          # out of space ("ENOSPC: no space left on device" during `npm ci`).
+          # Free scratch space first, then build each service serially with the
+          # classic (non-BuildKit) builder, which is what works manually. Finally
+          # start the stack without --build so nothing is rebuilt at up time.
           ssh -i ~/.ssh/id_ed25519 "$DEPLOY_USER@$DEPLOY_HOST" \
             "DEPLOY_PATH='$DEPLOY_PATH' bash -s" <<'REMOTE'
           set -euo pipefail
           cd "$DEPLOY_PATH"
-          git fetch --all --prune
-          git reset --hard origin/main
-          docker compose up -d --build --remove-orphans
-          docker image prune -f
+          git pull --ff-only origin main
+          apt clean || true
+          journalctl --vacuum-time=1d || true
+          rm -rf /tmp/* || true
+          rm -rf /var/tmp/* || true
+          docker builder prune -af || true
+          DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker compose build caddy
+          DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker compose build backend
+          docker compose up -d --remove-orphans
+          docker image prune -f || true
+          docker ps
+          curl -sS https://gym.maksymzhukov.com/api/db-health
           REMOTE
 
       # Once the new stack is live, wait a few seconds for the backend to accept
