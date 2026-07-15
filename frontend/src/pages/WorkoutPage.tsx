@@ -115,6 +115,7 @@ function ActiveWorkout({
     workout.draftReps ?? workout.targetReps,
   )
   const [modalOpen, setModalOpen] = useState(false)
+  const [discardOpen, setDiscardOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -194,6 +195,7 @@ function ActiveWorkout({
   }
 
   async function handleAbandon() {
+    setDiscardOpen(false)
     setBusy(true)
     try {
       await abandonWorkout()
@@ -370,10 +372,17 @@ function ActiveWorkout({
         type="button"
         className="workout-discard"
         disabled={busy}
-        onClick={() => void handleAbandon()}
+        onClick={() => setDiscardOpen(true)}
       >
         Discard workout
       </Button>
+
+      <DiscardWorkoutDialog
+        open={discardOpen}
+        onOpenChange={setDiscardOpen}
+        onConfirm={() => void handleAbandon()}
+        busy={busy}
+      />
     </main>
   )
 }
@@ -603,6 +612,44 @@ function FinishSetDialog({
             </Button>
             <Dialog.Close className="dialog-close">Cancel</Dialog.Close>
           </Form>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
+
+/**
+ * Guards the destructive "Discard workout" action. Discarding throws away every
+ * set recorded so far, so it must never fire from a single stray tap — the user
+ * confirms here first. Escape or a tap outside cancels; `Dialog.Close` is the
+ * same escape for touch screen readers, which cannot press Escape.
+ */
+function DiscardWorkoutDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  busy,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onConfirm: () => void
+  busy: boolean
+}) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className="dialog-backdrop" />
+        <Dialog.Popup className="dialog-popup" aria-label="Discard workout">
+          <p>Discard this workout? Every set recorded so far will be lost.</p>
+          <Button
+            type="button"
+            className="workout-discard"
+            disabled={busy}
+            onClick={onConfirm}
+          >
+            Discard workout
+          </Button>
+          <Dialog.Close className="dialog-close">Cancel</Dialog.Close>
         </Dialog.Popup>
       </Dialog.Portal>
     </Dialog.Root>
