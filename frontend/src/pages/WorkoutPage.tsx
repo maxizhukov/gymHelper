@@ -7,6 +7,7 @@ import { Form } from '@base-ui/react/form'
 import { NumberField } from '@base-ui/react/number-field'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
+import { useExerciseDetail, type LibraryExercise } from '../exercise-library'
 import {
   BODY_WEIGHT_MAX,
   BODY_WEIGHT_MIN,
@@ -293,6 +294,11 @@ function ActiveWorkout({
           </p>
           <h1 className="workout-exercise">{workout.exerciseName}</h1>
 
+          {/* How to do the movement, folded away until asked for — it belongs to
+              the exercise, not to logging a set, so it never crowds the numbers.
+              Legacy exercises carry no library id and so show nothing here. */}
+          <ExerciseInfo exerciseLibraryId={workout.exerciseLibraryId} />
+
           <div className="workout-stats">
             <div className="workout-stat">
               <p className="label">Set</p>
@@ -476,6 +482,164 @@ function ActiveWorkout({
       />
     </main>
   )
+}
+
+/**
+ * The collapsible "Technique" panel for the current exercise. Collapsed by
+ * default and rendered only for library exercises — a legacy-plan exercise has
+ * no row to read details from, so it shows nothing and the screen is unchanged.
+ */
+function ExerciseInfo({
+  exerciseLibraryId,
+}: {
+  exerciseLibraryId: number | null
+}) {
+  if (exerciseLibraryId === null) return null
+  return <ExerciseInfoPanel exerciseLibraryId={exerciseLibraryId} />
+}
+
+/**
+ * Fetches the exercise's details and, if there are any, offers them behind a
+ * compact trigger. An exercise the library knows nothing extra about contributes
+ * no trigger at all — an empty panel is worse than no panel.
+ */
+function ExerciseInfoPanel({
+  exerciseLibraryId,
+}: {
+  exerciseLibraryId: number
+}) {
+  const state = useExerciseDetail(exerciseLibraryId)
+  const exercise = state.status === 'ready' ? state.data : null
+
+  // Resolved but with nothing to show, or gone from the library: no trigger.
+  if (state.status === 'not-found') return null
+  if (exercise && !hasExerciseInfo(exercise)) return null
+
+  return (
+    <Collapsible.Root className="exercise-info">
+      <Collapsible.Trigger className="exercise-info-trigger">
+        {/* Drawn in CSS and rotated when open — hidden from screen readers,
+            which already hear the trigger's expanded state. */}
+        <span className="exercise-info-chevron" aria-hidden="true" />
+        <span className="exercise-info-title">Technique</span>
+      </Collapsible.Trigger>
+
+      <Collapsible.Panel className="exercise-info-panel">
+        {state.status === 'loading' && <p className="history-note">Loading…</p>}
+        {state.status === 'error' && (
+          <p className="error" role="alert">
+            {state.message}
+          </p>
+        )}
+        {exercise && <ExerciseInfoDetail exercise={exercise} />}
+      </Collapsible.Panel>
+    </Collapsible.Root>
+  )
+}
+
+/**
+ * The details themselves: a preview image, the technique note (capped in height
+ * and scrolled so a long one stays compact), the video, and a source link. The
+ * video player is not mounted until "Watch video" is tapped, so an opened panel
+ * that is only read costs no video load.
+ */
+function ExerciseInfoDetail({ exercise }: { exercise: LibraryExercise }) {
+  const [showVideo, setShowVideo] = useState(false)
+  const embedUrl = exercise.videoUrl ? youtubeEmbedUrl(exercise.videoUrl) : null
+
+  return (
+    <>
+      {exercise.thumbnailUrl && (
+        <img
+          className="exercise-info-thumb"
+          src={exercise.thumbnailUrl}
+          alt=""
+          loading="lazy"
+        />
+      )}
+
+      {exercise.descriptionRu && (
+        <p className="exercise-info-description">{exercise.descriptionRu}</p>
+      )}
+
+      {exercise.videoUrl && showVideo && embedUrl && (
+        <div className="exercise-info-video">
+          <iframe
+            src={embedUrl}
+            title="Exercise video"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      )}
+
+      {exercise.videoUrl &&
+        !(showVideo && embedUrl) &&
+        (embedUrl ? (
+          <Button
+            type="button"
+            className="exercise-info-watch"
+            onClick={() => setShowVideo(true)}
+          >
+            Watch video
+          </Button>
+        ) : (
+          // Not a recognisable YouTube link: hand it off to a new tab rather
+          // than trying to embed something that will not play inline.
+          <a
+            className="exercise-info-watch"
+            href={exercise.videoUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Watch video
+          </a>
+        ))}
+
+      {exercise.sourceUrl && (
+        <a
+          className="exercise-info-source"
+          href={exercise.sourceUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Source
+        </a>
+      )}
+    </>
+  )
+}
+
+/** Whether an exercise carries anything worth expanding the panel to read. */
+function hasExerciseInfo(exercise: LibraryExercise): boolean {
+  return Boolean(
+    exercise.descriptionRu ||
+      exercise.thumbnailUrl ||
+      exercise.videoUrl ||
+      exercise.sourceUrl,
+  )
+}
+
+/**
+ * A YouTube watch/share URL in its embeddable form, or null when the link is not
+ * a recognisable YouTube one — the caller then offers a plain link instead.
+ */
+function youtubeEmbedUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    const host = parsed.hostname.replace(/^www\./, '')
+    if (host === 'youtu.be') {
+      const id = parsed.pathname.slice(1)
+      return id ? `https://www.youtube.com/embed/${id}` : null
+    }
+    if (host === 'youtube.com' || host === 'm.youtube.com') {
+      const id = parsed.searchParams.get('v')
+      return id ? `https://www.youtube.com/embed/${id}` : null
+    }
+    return null
+  } catch {
+    return null
+  }
 }
 
 /**

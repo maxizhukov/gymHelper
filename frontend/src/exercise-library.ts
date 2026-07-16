@@ -27,6 +27,67 @@ export type LibraryExercise = {
 }
 
 const GENERIC_ERROR = 'Could not load the exercise library. Please try again.'
+const DETAIL_ERROR = 'Could not load exercise details.'
+
+/**
+ * One exercise's details, kept for the life of the session. The workout screen
+ * asks for the same movement repeatedly across its sets, so a resolved detail is
+ * held here and returned without another request.
+ */
+const detailCache = new Map<number, LibraryExercise>()
+
+/**
+ * One exercise by id, for the collapsible info on the workout screen. Fetched
+ * only when first needed and then cached, so expanding the panel a second time —
+ * or moving through the sets of the same exercise — costs no request.
+ */
+export function useExerciseDetail(id: number): Loadable<LibraryExercise> {
+  const [state, setState] = useState<Loadable<LibraryExercise>>(() => {
+    const cached = detailCache.get(id)
+    return cached ? { status: 'ready', data: cached } : { status: 'loading' }
+  })
+
+  useEffect(() => {
+    const cached = detailCache.get(id)
+    if (cached) {
+      setState({ status: 'ready', data: cached })
+      return
+    }
+
+    const controller = new AbortController()
+    setState({ status: 'loading' })
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/exercises/${id}`, {
+          credentials: 'include',
+          signal: controller.signal,
+        })
+        if (res.status === 404) {
+          setState({ status: 'not-found' })
+          return
+        }
+        if (!res.ok) {
+          setState({
+            status: 'error',
+            message: await errorMessage(res, DETAIL_ERROR),
+          })
+          return
+        }
+        const data = (await res.json()) as { exercise: LibraryExercise }
+        detailCache.set(id, data.exercise)
+        setState({ status: 'ready', data: data.exercise })
+      } catch (err) {
+        if (isAbort(err)) return
+        setState({ status: 'error', message: DETAIL_ERROR })
+      }
+    })()
+
+    return () => controller.abort()
+  }, [id])
+
+  return state
+}
 
 /** The exercise library, fetched from the backend on mount. */
 export function useExerciseLibrary(): Loadable<LibraryExercise[]> {
