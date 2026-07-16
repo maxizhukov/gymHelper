@@ -1939,6 +1939,64 @@ code {
   font-size: 1rem;
 }
 
+/* Plan selector: a horizontal, scrollable row of plan chips — only shown when
+   there is more than one plan to choose between. */
+.home-plan-list {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  list-style: none;
+  margin: 0 0 0.9rem;
+  padding: 0 0 0.25rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.home-plan-chip {
+  white-space: nowrap;
+  padding: 0.55rem 0.95rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.home-plan-chip-selected {
+  border-color: var(--lime);
+  background: var(--lime);
+  color: var(--ink);
+}
+
+/* Day cards double as the day selector: buttons that read like the plan cards,
+   the chosen one ringed in the lime accent. */
+.home-day-list {
+  margin-bottom: 1rem;
+}
+
+.home-day-card {
+  width: 100%;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.home-day-card .label {
+  display: block;
+  font-weight: 700;
+}
+
+.home-day-card .message {
+  display: block;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.home-day-selected {
+  border-color: var(--lime);
+}
+
 /* Two-up grid of the four main destinations — the clean replacement for the
    crowded equal-weight tab row. */
 .home-cards {
