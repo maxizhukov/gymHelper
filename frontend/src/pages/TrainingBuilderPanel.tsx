@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useExerciseLibrary, type LibraryExercise } from '../exercise-library'
 import {
@@ -257,7 +257,7 @@ function DayCard({
   onError: (message: string) => void
 }) {
   const navigate = useNavigate()
-  const [picked, setPicked] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [starting, setStarting] = useState(false)
 
   async function act(action: () => Promise<unknown>) {
@@ -290,8 +290,10 @@ function DayCard({
     }
   }
 
-  const alreadyOn = new Set(day.exercises.map((e) => e.exerciseLibraryId))
-  const addable = library.filter((exercise) => !alreadyOn.has(exercise.id))
+  const alreadyOn = useMemo(
+    () => new Set(day.exercises.map((e) => e.exerciseLibraryId)),
+    [day.exercises],
+  )
 
   return (
     <li className="card builder-day-card">
@@ -332,34 +334,22 @@ function DayCard({
         </ol>
       )}
 
-      <div className="builder-create">
-        <select
-          className="builder-input"
-          value={picked}
-          onChange={(event) => setPicked(event.target.value)}
-        >
-          <option value="">Add exercise from library…</option>
-          {addable.map((exercise) => (
-            <option key={exercise.id} value={exercise.id}>
-              {exercise.name}
-              {exercise.muscleGroup ? ` — ${exercise.muscleGroup}` : ''}
-            </option>
-          ))}
-        </select>
+      {pickerOpen ? (
+        <ExercisePicker
+          library={library}
+          alreadyOn={alreadyOn}
+          onAdd={(id) => act(() => addExercise(day.id, id))}
+          onClose={() => setPickerOpen(false)}
+        />
+      ) : (
         <button
           type="button"
-          className="nav-button"
-          disabled={!picked}
-          onClick={() => {
-            if (!picked) return
-            const id = Number(picked)
-            setPicked('')
-            void act(() => addExercise(day.id, id))
-          }}
+          className="nav-button builder-add-toggle"
+          onClick={() => setPickerOpen(true)}
         >
-          Add
+          + Add exercise
         </button>
-      </div>
+      )}
 
       <button
         type="button"
@@ -370,6 +360,189 @@ function DayCard({
         {starting ? 'Starting…' : 'Start workout'}
       </button>
     </li>
+  )
+}
+
+/** The most results the picker renders at once — enough to browse, few enough
+ *  that a 376-row library never lands as one wall of DOM. */
+const PICKER_LIMIT = 40
+
+/** Distinct, sorted, non-empty values of one field across the given exercises. */
+function distinct(
+  exercises: LibraryExercise[],
+  pick: (exercise: LibraryExercise) => string | null,
+): string[] {
+  const values = new Set<string>()
+  for (const exercise of exercises) {
+    const value = pick(exercise)
+    if (value) values.add(value)
+  }
+  return [...values].sort((a, b) => a.localeCompare(b))
+}
+
+/**
+ * The exercise picker for one day: a searchable, filterable list of library
+ * movements not already on the day. Search matches name, category, or muscle
+ * group; the category and muscle-group selects narrow further. Only a capped
+ * slice is shown, so the full catalogue never renders at once.
+ */
+function ExercisePicker({
+  library,
+  alreadyOn,
+  onAdd,
+  onClose,
+}: {
+  library: LibraryExercise[]
+  alreadyOn: Set<number>
+  onAdd: (exerciseLibraryId: number) => void
+  onClose: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const [category, setCategory] = useState('')
+  const [muscleGroup, setMuscleGroup] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  // Focus search the moment the picker opens, so the keyboard is ready to type.
+  useEffect(() => {
+    searchRef.current?.focus()
+  }, [])
+
+  const available = useMemo(
+    () => library.filter((exercise) => !alreadyOn.has(exercise.id)),
+    [library, alreadyOn],
+  )
+
+  const categories = useMemo(
+    () => distinct(available, (exercise) => exercise.category),
+    [available],
+  )
+  // Muscle-group options follow the chosen category so the two stay coherent.
+  const muscleGroups = useMemo(
+    () =>
+      distinct(
+        category ? available.filter((e) => e.category === category) : available,
+        (exercise) => exercise.muscleGroup,
+      ),
+    [available, category],
+  )
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return available.filter((exercise) => {
+      if (category && exercise.category !== category) return false
+      if (muscleGroup && exercise.muscleGroup !== muscleGroup) return false
+      if (!needle) return true
+      return [exercise.name, exercise.category, exercise.muscleGroup]
+        .filter((part): part is string => Boolean(part))
+        .some((part) => part.toLowerCase().includes(needle))
+    })
+  }, [available, query, category, muscleGroup])
+
+  const shown = filtered.slice(0, PICKER_LIMIT)
+
+  return (
+    <div className="builder-picker">
+      <div className="builder-picker-head">
+        <input
+          ref={searchRef}
+          className="builder-input"
+          type="search"
+          placeholder="Search exercises…"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <div className="builder-picker-filters">
+          <select
+            className="builder-input"
+            aria-label="Filter by category"
+            value={category}
+            onChange={(event) => {
+              setCategory(event.target.value)
+              setMuscleGroup('')
+            }}
+          >
+            <option value="">All categories</option>
+            {categories.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+          <select
+            className="builder-input"
+            aria-label="Filter by muscle group"
+            value={muscleGroup}
+            onChange={(event) => setMuscleGroup(event.target.value)}
+          >
+            <option value="">All muscles</option>
+            {muscleGroups.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {available.length === 0 ? (
+        <p className="message builder-picker-empty">
+          Every library exercise is already on this day.
+        </p>
+      ) : shown.length === 0 ? (
+        <p className="message builder-picker-empty">
+          No exercises match your search.
+        </p>
+      ) : (
+        <>
+          <ul className="builder-picker-list">
+            {shown.map((exercise) => (
+              <li key={exercise.id} className="builder-picker-row">
+                {exercise.thumbnailUrl ? (
+                  <img
+                    className="builder-picker-thumb"
+                    src={exercise.thumbnailUrl}
+                    alt=""
+                    loading="lazy"
+                  />
+                ) : (
+                  <span className="builder-picker-thumb builder-picker-thumb-empty" aria-hidden="true" />
+                )}
+                <span className="builder-picker-info">
+                  <span className="builder-picker-name">{exercise.name}</span>
+                  <span className="builder-picker-meta">
+                    {[exercise.category, exercise.muscleGroup]
+                      .filter((part): part is string => Boolean(part))
+                      .join(' · ')}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="builder-icon builder-picker-add"
+                  aria-label={`Add ${exercise.name}`}
+                  onClick={() => onAdd(exercise.id)}
+                >
+                  +
+                </button>
+              </li>
+            ))}
+          </ul>
+          {filtered.length > shown.length && (
+            <p className="builder-picker-note">
+              Showing first {shown.length} of {filtered.length}. Refine your
+              search to narrow down.
+            </p>
+          )}
+        </>
+      )}
+
+      <button
+        type="button"
+        className="nav-button builder-picker-done"
+        onClick={onClose}
+      >
+        Done
+      </button>
+    </div>
   )
 }
 

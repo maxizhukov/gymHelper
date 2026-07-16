@@ -1902,6 +1902,211 @@ code {
 /* Optional per-set effort markers                                     */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Home hub                                                            */
+/* ------------------------------------------------------------------ */
+
+/* Section view: a plain heading under the back link, no giant display title. */
+.home-section-title {
+  font-size: 1.5rem !important;
+  text-align: left;
+  margin: 0.25rem 0 1.25rem !important;
+}
+
+.home-start {
+  margin: 1.5rem 0;
+  text-align: left;
+}
+
+.home-eyebrow {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0 0 0.75rem;
+}
+
+.home-start-empty {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.home-start-empty .message {
+  font-size: 1rem;
+}
+
+/* Two-up grid of the four main destinations — the clean replacement for the
+   crowded equal-weight tab row. */
+.home-cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.home-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-start;
+  text-align: left;
+  padding: 1.1rem 1.15rem;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+}
+
+.home-card-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  margin-bottom: 0.35rem;
+}
+
+.home-card-title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.home-card-blurb {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.home-secondary {
+  margin-top: 1.5rem;
+  text-align: center;
+}
+
+.home-secondary-link {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--muted-2);
+  text-decoration: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Training Builder — exercise picker                                  */
+/* ------------------------------------------------------------------ */
+
+.builder-add-toggle {
+  width: 100%;
+}
+
+.builder-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 0.85rem;
+  background: var(--surface-2);
+}
+
+/* The search + filters stay put while the list scrolls under them. */
+.builder-picker-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  background: var(--surface-2);
+}
+
+.builder-picker-filters {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.builder-picker-filters .builder-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.builder-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.builder-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.builder-picker-thumb {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--surface-3);
+}
+
+.builder-picker-thumb-empty {
+  display: block;
+}
+
+.builder-picker-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.builder-picker-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.builder-picker-meta {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.builder-picker-add {
+  flex: 0 0 auto;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  font-size: 1.25rem;
+  color: var(--lime-deep);
+  border-color: var(--lime-deep);
+}
+
+.builder-picker-empty {
+  margin: 0.5rem 0;
+  color: var(--muted);
+}
+
+.builder-picker-note {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.builder-picker-done {
+  width: 100%;
+}
+
 .workout-details {
   border: 1px solid var(--border);
   border-radius: 16px;
