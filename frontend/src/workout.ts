@@ -17,6 +17,8 @@ export type WorkoutPhase = 'set' | 'rest' | 'completed'
 export type WorkoutExercise = {
   position: number
   name: string
+  /** The library movement this exercise is, or null for a legacy-plan one. */
+  exerciseLibraryId: number | null
   /** True once the user has pushed this one back at least once. */
   deferred: boolean
   /** Sets logged against this exercise, counted by identity — so it reads zero
@@ -40,6 +42,8 @@ export type WorkoutState = {
   exerciseIndex: number
   exerciseCount: number
   exerciseName: string
+  /** The library id of the current exercise, or null for a legacy-plan one. */
+  exerciseLibraryId: number | null
 
   /** Deferred exercises still waiting later in the queue. Informational. */
   deferredCount: number
@@ -130,6 +134,23 @@ export function startWorkout(slug: string): Promise<AnchoredWorkout> {
 }
 
 /**
+ * Starts a workout from a Training Builder day. Rejects if one is already in
+ * progress, or if the day has no active exercises.
+ */
+export function startWorkoutFromTemplateDay(
+  dayId: number,
+): Promise<AnchoredWorkout> {
+  return post('start-template-day', { dayId })
+}
+
+/** Optional effort markers a set may carry. All optional; warmup defaults off. */
+export type SetDetails = {
+  rir?: number | null
+  rpe?: number | null
+  isWarmup?: boolean
+}
+
+/**
  * Persists weight/reps as they are typed, before the set is committed. The
  * response is not applied to the screen — the inputs already show these values,
  * and this write exists so a crash mid-entry loses nothing.
@@ -141,9 +162,22 @@ export async function saveDraft(draft: {
   await post('draft', draft)
 }
 
-/** Logs the current set. The server starts rest, or completes the workout. */
-export function finishSet(weight: number, reps: number): Promise<AnchoredWorkout> {
-  return post('sets', { weight, reps })
+/**
+ * Logs the current set. The server starts rest, or completes the workout.
+ * Optional RIR / RPE / warmup markers ride along when the user set them.
+ */
+export function finishSet(
+  weight: number,
+  reps: number,
+  details: SetDetails = {},
+): Promise<AnchoredWorkout> {
+  return post('sets', {
+    weight,
+    reps,
+    rir: details.rir ?? null,
+    rpe: details.rpe ?? null,
+    isWarmup: details.isWarmup ?? false,
+  })
 }
 
 /** Ends rest and advances to the next set or exercise. */
@@ -352,17 +386,31 @@ export function clearExerciseHistoryCache(): void {
  * The user's history on one exercise: last workout, the last five, best ever.
  * One exercise, one request — never the whole plan — and only when the panel's
  * exercise changes. The server does the aggregating.
+ *
+ * When the exercise carries a library id (a Training Builder workout), history
+ * is resolved by that id, so it follows the movement even after it is removed
+ * from a day and added back. A legacy-plan exercise has no library id and falls
+ * back to matching by name. The cache is keyed by whichever was used, so the two
+ * never collide.
  */
 export function useExerciseHistory(
   exerciseName: string,
+  exerciseLibraryId: number | null = null,
 ): Loadable<ExerciseHistory> {
+  const cacheKey =
+    exerciseLibraryId !== null ? `lib:${exerciseLibraryId}` : `name:${exerciseName}`
+  const url =
+    exerciseLibraryId !== null
+      ? `/api/workout/exercise-history/${exerciseLibraryId}`
+      : `/api/workout/history?name=${encodeURIComponent(exerciseName)}`
+
   const [state, setState] = useState<Loadable<ExerciseHistory>>(() => {
-    const cached = historyCache.get(exerciseName)
+    const cached = historyCache.get(cacheKey)
     return cached ? { status: 'ready', data: cached } : { status: 'loading' }
   })
 
   useEffect(() => {
-    const cached = historyCache.get(exerciseName)
+    const cached = historyCache.get(cacheKey)
     if (cached) {
       setState({ status: 'ready', data: cached })
       return
@@ -373,10 +421,10 @@ export function useExerciseHistory(
 
     void (async () => {
       try {
-        const res = await fetch(
-          `/api/workout/history?name=${encodeURIComponent(exerciseName)}`,
-          { credentials: 'include', signal: controller.signal },
-        )
+        const res = await fetch(url, {
+          credentials: 'include',
+          signal: controller.signal,
+        })
         if (!res.ok) {
           setState({
             status: 'error',
@@ -385,7 +433,7 @@ export function useExerciseHistory(
           return
         }
         const data = (await res.json()) as { history: ExerciseHistory }
-        historyCache.set(exerciseName, data.history)
+        historyCache.set(cacheKey, data.history)
         setState({ status: 'ready', data: data.history })
       } catch (err) {
         if (isAbort(err)) return
@@ -394,7 +442,7 @@ export function useExerciseHistory(
     })()
 
     return () => controller.abort()
-  }, [exerciseName])
+  }, [cacheKey, url])
 
   return state
 }

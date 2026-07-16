@@ -1746,3 +1746,184 @@ code {
     padding: 1.25rem 1.5rem;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Training Builder                                                    */
+/* ------------------------------------------------------------------ */
+
+.builder {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.builder-create {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.builder-create .nav-button {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 0.7rem 1rem;
+}
+
+.builder-input {
+  flex: 1;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0.7rem 0.85rem;
+  font-family: inherit;
+  font-size: 1rem;
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.builder-template-list,
+.builder-day-list,
+.builder-exercise-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.builder-template-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+}
+
+.builder-template-selected {
+  border-color: var(--lime);
+}
+
+.builder-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.builder-editor-header,
+.builder-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.builder-name {
+  border: none;
+  background: none;
+  padding: 0.2rem 0;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.builder-name-edit {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  flex: 1;
+}
+
+.builder-danger {
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+  background: none;
+  color: var(--danger);
+  padding: 0.4rem 0.7rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.builder-exercise-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.builder-exercise-name {
+  color: var(--ink);
+}
+
+.builder-exercise-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+}
+
+.builder-icon {
+  min-width: 2rem;
+  min-height: 2rem;
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.builder-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.builder-icon-remove {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.builder-day-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Optional per-set effort markers                                     */
+/* ------------------------------------------------------------------ */
+
+.workout-details {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 0.5rem 0.85rem;
+}
+
+.workout-details-summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.workout-details-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding-top: 0.85rem;
+}
+
+.workout-warmup {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink);
+}

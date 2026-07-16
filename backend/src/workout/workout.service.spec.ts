@@ -97,6 +97,32 @@ async function createDependencies(db: DatabaseService): Promise<void> {
       UNIQUE (training_day_id, group_index, item_index)
     )
   `);
+  // The exercise library and Training Builder tables the workout schema now
+  // links to: `workout_session_exercises.exercise_library_id` references the
+  // library, and a workout can be started from a builder day, so
+  // `workout_sessions.template_day_id` references one. Minimal shapes — just
+  // what the foreign keys and the session join need.
+  await db.query(`
+    CREATE TABLE exercise_library (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      is_active BOOLEAN NOT NULL DEFAULT true
+    )
+  `);
+  await db.query(`
+    CREATE TABLE training_templates (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL
+    )
+  `);
+  await db.query(`
+    CREATE TABLE training_template_days (
+      id SERIAL PRIMARY KEY,
+      template_id INTEGER NOT NULL REFERENCES training_templates(id) ON DELETE CASCADE,
+      name TEXT NOT NULL
+    )
+  `);
 }
 
 /** A training day whose exercises are performed in the order given. */

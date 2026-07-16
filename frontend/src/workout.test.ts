@@ -38,6 +38,7 @@ function workoutState(
   const exercises: WorkoutExercise[] = QUEUE.map((name, position) => ({
     position,
     name,
+    exerciseLibraryId: null,
     deferred: false,
     completedSets: completedSets[position],
   }))
@@ -55,6 +56,7 @@ function workoutState(
     exerciseIndex,
     exerciseCount: exercises.length,
     exerciseName: exercises[exerciseIndex]?.name ?? '',
+    exerciseLibraryId: null,
     deferredCount: 0,
     setNumber: (completedSets[exerciseIndex] ?? 0) + 1,
     setsPerExercise: SETS_PER_EXERCISE,
@@ -113,15 +115,34 @@ describe('showMachineBusyButton', () => {
     // position 1 is Incline Press, untouched, and the button is offered.
     const afterDefer = workoutState([4, 0, 0, 0], 1, {
       exercises: [
-        { position: 0, name: 'Bench Press', deferred: false, completedSets: 4 },
-        { position: 1, name: 'Incline Press', deferred: false, completedSets: 0 },
+        {
+          position: 0,
+          name: 'Bench Press',
+          exerciseLibraryId: null,
+          deferred: false,
+          completedSets: 4,
+        },
+        {
+          position: 1,
+          name: 'Incline Press',
+          exerciseLibraryId: null,
+          deferred: false,
+          completedSets: 0,
+        },
         {
           position: 2,
           name: 'Chest Press Machine',
+          exerciseLibraryId: null,
           deferred: true,
           completedSets: 0,
         },
-        { position: 3, name: 'Pec Deck', deferred: false, completedSets: 0 },
+        {
+          position: 3,
+          name: 'Pec Deck',
+          exerciseLibraryId: null,
+          deferred: false,
+          completedSets: 0,
+        },
       ],
       exerciseName: 'Incline Press',
       deferredCount: 1,

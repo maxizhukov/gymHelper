@@ -4,6 +4,10 @@ import {
   BODY_WEIGHT_MIN,
   REPS_MAX,
   REPS_MIN,
+  RIR_MAX,
+  RIR_MIN,
+  RPE_MAX,
+  RPE_MIN,
   WEIGHT_MAX,
   WEIGHT_MIN,
 } from '../workout.service';
@@ -31,6 +35,9 @@ const WEIGHT_DECIMALS = 2;
 export interface FinishSetDto {
   weight: number;
   reps: number;
+  rir: number | null;
+  rpe: number | null;
+  isWarmup: boolean;
 }
 
 export interface SaveDraftDto {
@@ -117,13 +124,62 @@ export function validateStartWorkoutDto(body: unknown): { slug: string } {
   return { slug };
 }
 
-/** The weight and reps actually performed. Both are required to log a set. */
+/** The Training Builder day to start a workout from. */
+export function validateStartTemplateDayDto(body: unknown): { dayId: number } {
+  const { dayId } = requireObject(body);
+  if (!Number.isInteger(dayId) || (dayId as number) < 1) {
+    throw new BadRequestException('dayId must be a positive integer.');
+  }
+  return { dayId: dayId as number };
+}
+
+/**
+ * A finished set: the weight and reps performed, plus optional effort markers.
+ * Weight and reps are required; RIR, RPE and the warmup flag are optional — an
+ * omitted or null RIR/RPE records nothing, and warmup defaults to false. RPE is
+ * kept to one decimal, the precision the column stores.
+ */
 export function validateFinishSetDto(body: unknown): FinishSetDto {
-  const { weight, reps } = requireObject(body);
+  const { weight, reps, rir, rpe, isWarmup } = requireObject(body);
   return {
     weight: requireDecimal(weight, 'weight', WEIGHT_MIN, WEIGHT_MAX),
     reps: requireInteger(reps, 'reps', REPS_MIN, REPS_MAX),
+    rir:
+      rir === null || rir === undefined
+        ? null
+        : requireInteger(rir, 'rir', RIR_MIN, RIR_MAX),
+    rpe:
+      rpe === null || rpe === undefined
+        ? null
+        : requireDecimalScaled(rpe, 'rpe', RPE_MIN, RPE_MAX, 1),
+    isWarmup: isWarmup === undefined ? false : requireBoolean(isWarmup, 'isWarmup'),
   };
+}
+
+/** Rejects anything that is not a boolean. */
+function requireBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new BadRequestException(`${field} must be a boolean.`);
+  }
+  return value;
+}
+
+/** Like requireDecimal, but rounding to a caller-chosen number of decimals. */
+function requireDecimalScaled(
+  value: unknown,
+  field: string,
+  min: number,
+  max: number,
+  decimals: number,
+): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new BadRequestException(`${field} must be a number.`);
+  }
+  if (value < min || value > max) {
+    throw new BadRequestException(`${field} must be between ${min} and ${max}.`);
+  }
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
 }
 
 /**

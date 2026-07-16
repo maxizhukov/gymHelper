@@ -9,6 +9,7 @@ import { ExerciseLibraryModule } from './exercise-library/exercise-library.modul
 import { FoodModule } from './food/food.module';
 import { HealthController } from './health.controller';
 import { StatsModule } from './stats/stats.module';
+import { TrainingBuilderModule } from './training-builder/training-builder.module';
 import { TrainingModule } from './training/training.module';
 import { WorkoutModule } from './workout/workout.module';
 
@@ -19,6 +20,7 @@ import { WorkoutModule } from './workout/workout.module';
     AuthModule,
     DeployModule,
     TrainingModule,
+    TrainingBuilderModule,
     WorkoutModule,
     StatsModule,
     FoodModule,

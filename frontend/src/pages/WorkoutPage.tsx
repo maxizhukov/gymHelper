@@ -115,6 +115,11 @@ function ActiveWorkout({
   const [reps, setReps] = useState<number | null>(
     workout.draftReps ?? workout.targetReps,
   )
+  // Optional effort markers for this set. Not drafted — they are a quick tap at
+  // the moment of logging, and reset with the component on the next set/exercise.
+  const [warmup, setWarmup] = useState(false)
+  const [rir, setRir] = useState<number | null>(null)
+  const [rpe, setRpe] = useState<number | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [discardOpen, setDiscardOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -180,7 +185,7 @@ function ActiveWorkout({
     }
     window.clearTimeout(draftTimer.current)
     setModalOpen(false)
-    await run(() => finishSet(weight, reps))
+    await run(() => finishSet(weight, reps, { rir, rpe, isWarmup: warmup }))
   }
 
   /**
@@ -305,6 +310,7 @@ function ActiveWorkout({
               and costs no vertical space until it is asked. */}
           <PreviousPerformance
             exerciseName={workout.exerciseName}
+            exerciseLibraryId={workout.exerciseLibraryId}
             setNumber={workout.setNumber}
             weight={weight}
             reps={reps}
@@ -337,6 +343,81 @@ function ActiveWorkout({
               </NumberField.Group>
             </NumberField.Root>
           </Field.Root>
+
+          {/* Optional and out of the way: most sets need none of this, so it
+              stays folded until the user wants to log effort or a warmup. */}
+          <details className="workout-details">
+            <summary className="workout-details-summary">
+              Effort (optional)
+            </summary>
+            <div className="workout-details-body">
+              <label className="workout-warmup">
+                <input
+                  type="checkbox"
+                  checked={warmup}
+                  disabled={busy}
+                  onChange={(event) => setWarmup(event.target.checked)}
+                />
+                Warm-up set
+              </label>
+
+              <Field.Root name="rir" className="field">
+                <Field.Label>RIR (reps in reserve)</Field.Label>
+                <NumberField.Root
+                  value={rir}
+                  onValueChange={setRir}
+                  min={0}
+                  max={50}
+                  step={1}
+                  disabled={busy}
+                >
+                  <NumberField.Group className="number-field-group">
+                    <NumberField.Decrement
+                      className="number-field-button"
+                      aria-label="Decrease RIR"
+                    >
+                      −
+                    </NumberField.Decrement>
+                    <NumberField.Input inputMode="numeric" />
+                    <NumberField.Increment
+                      className="number-field-button"
+                      aria-label="Increase RIR"
+                    >
+                      +
+                    </NumberField.Increment>
+                  </NumberField.Group>
+                </NumberField.Root>
+              </Field.Root>
+
+              <Field.Root name="rpe" className="field">
+                <Field.Label>RPE (0–10)</Field.Label>
+                <NumberField.Root
+                  value={rpe}
+                  onValueChange={setRpe}
+                  min={0}
+                  max={10}
+                  step={0.5}
+                  disabled={busy}
+                >
+                  <NumberField.Group className="number-field-group">
+                    <NumberField.Decrement
+                      className="number-field-button"
+                      aria-label="Decrease RPE"
+                    >
+                      −
+                    </NumberField.Decrement>
+                    <NumberField.Input inputMode="decimal" />
+                    <NumberField.Increment
+                      className="number-field-button"
+                      aria-label="Increase RPE"
+                    >
+                      +
+                    </NumberField.Increment>
+                  </NumberField.Group>
+                </NumberField.Root>
+              </Field.Root>
+            </div>
+          </details>
 
           {error && (
             <p className="error" role="alert">
@@ -408,16 +489,18 @@ function ActiveWorkout({
  */
 function PreviousPerformance({
   exerciseName,
+  exerciseLibraryId,
   setNumber,
   weight,
   reps,
 }: {
   exerciseName: string
+  exerciseLibraryId: number | null
   setNumber: number
   weight: number | null
   reps: number | null
 }) {
-  const state = useExerciseHistory(exerciseName)
+  const state = useExerciseHistory(exerciseName, exerciseLibraryId)
   const history = state.status === 'ready' ? state.data : null
   const improvement = improvementOverLast(
     history?.last ?? null,

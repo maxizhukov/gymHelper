@@ -7,6 +7,7 @@ import { useActiveWorkout } from '../workout'
 import ExercisesPanel from './ExercisesPanel'
 import FoodPanel from './FoodPanel'
 import StatsPanel from './StatsPanel'
+import TrainingBuilderPanel from './TrainingBuilderPanel'
 
 export default function HomePage() {
   const { user } = useAuth()
@@ -43,6 +44,9 @@ export default function HomePage() {
         <Tabs.List className="tab-list">
           <Tabs.Tab className="tab" value="training">
             Training
+          </Tabs.Tab>
+          <Tabs.Tab className="tab" value="builder">
+            Builder
           </Tabs.Tab>
           <Tabs.Tab className="tab" value="stats">
             Stats
@@ -91,6 +95,10 @@ export default function HomePage() {
               </ul>
             )}
           </section>
+        </Tabs.Panel>
+
+        <Tabs.Panel className="tab-panel" value="builder">
+          {tab === 'builder' && <TrainingBuilderPanel />}
         </Tabs.Panel>
 
         <Tabs.Panel className="tab-panel" value="stats">

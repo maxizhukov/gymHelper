@@ -345,7 +345,7 @@ export class StatsService {
       body_weight_kg: number | null;
     }>(
       `SELECT s.id,
-              d.day AS day_name,
+              COALESCE(d.day, td.name, 'Workout') AS day_name,
               s.completed_at,
               EXTRACT(EPOCH FROM (s.completed_at - s.started_at))::int
                 AS duration_seconds,
@@ -358,7 +358,8 @@ export class StatsService {
                 WHERE ws.workout_session_id = s.id)::float8 AS volume,
               s.body_weight_kg::float8 AS body_weight_kg
          FROM workout_sessions s
-         JOIN training_days d ON d.id = s.training_day_id
+         LEFT JOIN training_days d ON d.id = s.training_day_id
+         LEFT JOIN training_template_days td ON td.id = s.template_day_id
         WHERE s.user_id = $1 AND s.completed_at IS NOT NULL
         ORDER BY s.completed_at DESC
         LIMIT $2`,

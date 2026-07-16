@@ -52,6 +52,21 @@ export const WEIGHT_MAX = 1000;
 export const REPS_MIN = 1;
 export const REPS_MAX = 100;
 
+// Optional effort markers on a logged set. RIR (reps in reserve) is a whole
+// count; RPE (rate of perceived exertion) is the 0–10 scale, half-points
+// allowed. Both mirror the CHECK constraints on the table.
+export const RIR_MIN = 0;
+export const RIR_MAX = 50;
+export const RPE_MIN = 0;
+export const RPE_MAX = 10;
+
+/** The optional effort/warmup markers a set may carry. */
+export interface SetDetails {
+  rir: number | null;
+  rpe: number | null;
+  isWarmup: boolean;
+}
+
 // A human body weight in kilograms. Anything outside this is a typo — a slipped
 // decimal point or a reading in pounds — not a value worth charting later.
 export const BODY_WEIGHT_MIN = 20;
@@ -81,6 +96,9 @@ export type WorkoutPhase = 'set' | 'rest' | 'completed';
 export interface WorkoutExercise {
   position: number;
   name: string;
+  /** The library movement this exercise is, or null for a legacy-plan exercise
+   *  that has no library link. Exercise history keys on this. */
+  exerciseLibraryId: number | null;
   /** True once the user has pushed this one back at least once. */
   deferred: boolean;
   /** Sets logged against this exercise — counted by identity, so a reordered
@@ -110,6 +128,9 @@ export interface WorkoutState {
   exerciseIndex: number;
   exerciseCount: number;
   exerciseName: string;
+  /** The library id of the current exercise, or null for a legacy-plan one.
+   *  The Previous Performance panel prefers this over the name when present. */
+  exerciseLibraryId: number | null;
 
   /** Deferred exercises still waiting later in the queue. Informational. */
   deferredCount: number;
@@ -169,7 +190,8 @@ export interface ExerciseHistory {
 interface SessionRow {
   id: number;
   user_id: number;
-  training_day_id: number;
+  training_day_id: number | null;
+  template_day_id: number | null;
   slug: string;
   day: string;
   focus: string;
@@ -200,17 +222,25 @@ function numericOrNull(value: string | number | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-// Every read of a session joins the day it belongs to and stamps the server's
-// clock, so elapsed/remaining seconds are computed against the database's time
-// rather than the browser's.
+// Every read of a session resolves the day it belongs to and stamps the
+// server's clock, so elapsed/remaining seconds are computed against the
+// database's time rather than the browser's. A session comes from either a
+// legacy `training_days` row or a Training Builder day, so both are LEFT JOINed
+// and the display fields fall through to whichever is present. The slug is
+// synthesised for template days — the frontend only uses it as an opaque label.
 const SESSION_SELECT = `
-  SELECT s.id, s.user_id, s.training_day_id, s.started_at, s.completed_at,
-         s.exercise_position, s.set_number, s.resting_since, s.set_started_at,
-         s.planned_reps, s.rest_seconds, s.sets_per_exercise, s.body_weight_kg,
-         d.slug, d.day, d.focus,
+  SELECT s.id, s.user_id, s.training_day_id, s.template_day_id, s.started_at,
+         s.completed_at, s.exercise_position, s.set_number, s.resting_since,
+         s.set_started_at, s.planned_reps, s.rest_seconds, s.sets_per_exercise,
+         s.body_weight_kg,
+         COALESCE(d.slug, 'tpl-' || s.template_day_id::text, 'workout-' || s.id::text) AS slug,
+         COALESCE(d.day, td.name, 'Workout') AS day,
+         COALESCE(d.focus, t.name, '') AS focus,
          now() AS server_now
     FROM workout_sessions s
-    JOIN training_days d ON d.id = s.training_day_id
+    LEFT JOIN training_days d ON d.id = s.training_day_id
+    LEFT JOIN training_template_days td ON td.id = s.template_day_id
+    LEFT JOIN training_templates t ON t.id = td.template_id
 `;
 
 /** An active session is one that was neither completed nor abandoned. */
@@ -287,6 +317,22 @@ export class WorkoutService implements OnModuleInit {
           CHECK (body_weight_kg BETWEEN 20 AND 400)
     `);
 
+    // A workout can now be started from a Training Builder day as well as from a
+    // legacy `training_days` row. Exactly one of the two source columns is set
+    // per session (enforced in code where the session is created). training_day_id
+    // becomes nullable for template-sourced sessions; template_day_id is added
+    // for them. ON DELETE SET NULL on the template link keeps a finished
+    // workout's history intact after its template is deleted — the session still
+    // owns its snapshotted exercises and sets.
+    await this.db.query(
+      'ALTER TABLE workout_sessions ALTER COLUMN training_day_id DROP NOT NULL',
+    );
+    await this.db.query(
+      `ALTER TABLE workout_sessions
+         ADD COLUMN IF NOT EXISTS template_day_id INTEGER
+           REFERENCES training_template_days(id) ON DELETE SET NULL`,
+    );
+
     // The session's exercise queue, and the workout's exercise identities.
     //
     // `id` is the identity: minted here, pointed at by every row that records
@@ -305,6 +351,7 @@ export class WorkoutService implements OnModuleInit {
         session_id          INTEGER NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
         position            INTEGER NOT NULL,
         catalog_exercise_id INTEGER REFERENCES exercises(id) ON DELETE SET NULL,
+        exercise_library_id INTEGER REFERENCES exercise_library(id) ON DELETE SET NULL,
         name                TEXT NOT NULL,
         deferred_at         TIMESTAMPTZ,
         UNIQUE (session_id, position)
@@ -313,6 +360,16 @@ export class WorkoutService implements OnModuleInit {
     // Added after the table shipped; workouts already in flight keep their rows.
     await this.db.query(
       'ALTER TABLE workout_session_exercises ADD COLUMN IF NOT EXISTS deferred_at TIMESTAMPTZ',
+    );
+    // The library movement this exercise is, snapshotted at start so exercise
+    // history can be resolved by `exercise_library_id` across every workout —
+    // removing an exercise from a template and adding it back later still finds
+    // its past sets. Nullable: a workout started from the legacy plan (whose
+    // exercises are named text with no library link) records nothing here.
+    await this.db.query(
+      `ALTER TABLE workout_session_exercises
+         ADD COLUMN IF NOT EXISTS exercise_library_id INTEGER
+           REFERENCES exercise_library(id) ON DELETE SET NULL`,
     );
 
     // One row per completed set, naming the exercise it belongs to by identity.
@@ -335,9 +392,20 @@ export class WorkoutService implements OnModuleInit {
         started_at         TIMESTAMPTZ,
         completed_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
         rest_duration      INTEGER CHECK (rest_duration >= 0),
+        rir                SMALLINT CHECK (rir BETWEEN 0 AND 50),
+        rpe                NUMERIC(3, 1) CHECK (rpe BETWEEN 0 AND 10),
+        is_warmup          BOOLEAN NOT NULL DEFAULT false,
         created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
         UNIQUE (workout_session_id, exercise_id, set_number)
       )
+    `);
+    // Optional per-set effort markers, added after the table shipped. A set
+    // logged before these existed reads null RIR/RPE and a non-warmup flag.
+    await this.db.query(`
+      ALTER TABLE workout_sets
+        ADD COLUMN IF NOT EXISTS rir       SMALLINT CHECK (rir BETWEEN 0 AND 50),
+        ADD COLUMN IF NOT EXISTS rpe       NUMERIC(3, 1) CHECK (rpe BETWEEN 0 AND 10),
+        ADD COLUMN IF NOT EXISTS is_warmup BOOLEAN NOT NULL DEFAULT false
     `);
 
     // Keypad input persisted as it is typed, before the set is committed. Keyed
@@ -804,6 +872,104 @@ export class WorkoutService implements OnModuleInit {
   }
 
   /**
+   * The same panel as `getExerciseHistory`, but resolved by `exercise_library_id`
+   * rather than by name — the identity the Training Builder assigns. This is what
+   * makes history follow a movement through the template: remove an exercise from
+   * a day and add it back, and its past sets still surface, because they were
+   * logged against the same library id whatever the template did in between.
+   *
+   * Only completed workouts count, and the panel reports the last five plus the
+   * best set ever. The exercise name comes from the library so the heading reads
+   * correctly even if no completed set exists yet.
+   */
+  async getExerciseHistoryByLibraryId(
+    userId: number,
+    exerciseLibraryId: number,
+  ): Promise<ExerciseHistory> {
+    const nameResult = await this.db.query<{ name: string }>(
+      'SELECT name FROM exercise_library WHERE id = $1',
+      [exerciseLibraryId],
+    );
+    const exerciseName = nameResult.rows[0]?.name ?? '';
+
+    const workoutsResult = await this.db.query<{
+      id: number;
+      completed_at: Date;
+    }>(
+      `SELECT s.id, s.completed_at
+         FROM workout_sessions s
+        WHERE s.user_id = $1
+          AND s.completed_at IS NOT NULL
+          AND EXISTS (
+                SELECT 1
+                  FROM workout_session_exercises e
+                  JOIN workout_sets ws ON ws.exercise_id = e.id
+                 WHERE e.session_id = s.id AND e.exercise_library_id = $2
+              )
+        ORDER BY s.completed_at DESC
+        LIMIT $3`,
+      [userId, exerciseLibraryId, HISTORY_WORKOUTS],
+    );
+    const workouts = workoutsResult.rows;
+
+    if (workouts.length === 0) {
+      return { exerciseName, last: null, recent: [], best: null };
+    }
+
+    const setsResult = await this.db.query<{
+      workout_session_id: number;
+      set_number: number;
+      weight: number;
+      reps: number;
+    }>(
+      `SELECT ws.workout_session_id, ws.set_number,
+              ws.actual_weight::float8 AS weight, ws.actual_reps AS reps
+         FROM workout_sets ws
+         JOIN workout_session_exercises e ON e.id = ws.exercise_id
+        WHERE ws.workout_session_id = ANY($1::int[]) AND e.exercise_library_id = $2
+        ORDER BY ws.workout_session_id, ws.set_number`,
+      [workouts.map((workout) => workout.id), exerciseLibraryId],
+    );
+
+    const setsByWorkout = new Map<number, HistorySet[]>();
+    for (const row of setsResult.rows) {
+      const sets = setsByWorkout.get(row.workout_session_id) ?? [];
+      sets.push({
+        setNumber: row.set_number,
+        weight: row.weight,
+        reps: row.reps,
+      });
+      setsByWorkout.set(row.workout_session_id, sets);
+    }
+
+    const recent: HistoryWorkout[] = workouts.map((workout) => ({
+      workoutId: workout.id,
+      completedAt: workout.completed_at.toISOString(),
+      sets: setsByWorkout.get(workout.id) ?? [],
+    }));
+
+    const bestResult = await this.db.query<{ weight: number; reps: number }>(
+      `SELECT ws.actual_weight::float8 AS weight, ws.actual_reps AS reps
+         FROM workout_sets ws
+         JOIN workout_session_exercises e ON e.id = ws.exercise_id
+         JOIN workout_sessions s ON s.id = ws.workout_session_id
+        WHERE s.user_id = $1 AND e.exercise_library_id = $2
+          AND s.completed_at IS NOT NULL
+        ORDER BY ws.actual_weight DESC, ws.actual_reps DESC
+        LIMIT 1`,
+      [userId, exerciseLibraryId],
+    );
+    const bestRow = bestResult.rows[0];
+
+    return {
+      exerciseName,
+      last: recent[0] ?? null,
+      recent,
+      best: bestRow ? { weight: bestRow.weight, reps: bestRow.reps } : null,
+    };
+  }
+
+  /**
    * Starts a workout for a training day: snapshots the config and the exercise
    * list, stamps the start time, and points the cursor at the first set. The
    * partial unique index rejects a second concurrent start.
@@ -902,6 +1068,116 @@ export class WorkoutService implements OnModuleInit {
   }
 
   /**
+   * Starts a workout from a Training Builder day. Mirrors `startWorkout`, but the
+   * exercise queue is snapshotted from the day's *active* exercises, each
+   * carrying its `exercise_library_id` and the library's current name — so the
+   * workout is fixed even if the template is edited mid-session, and every set
+   * logged resolves back to its library movement for history.
+   *
+   * The day must belong to a template the user owns; the partial unique index
+   * rejects a second concurrent start.
+   */
+  async startWorkoutFromTemplateDay(
+    userId: number,
+    dayId: number,
+  ): Promise<WorkoutState> {
+    const dayResult = await this.db.query<{ id: number }>(
+      `SELECT td.id
+         FROM training_template_days td
+         JOIN training_templates t ON t.id = td.template_id
+        WHERE td.id = $1 AND t.user_id = $2`,
+      [dayId, userId],
+    );
+    if (!dayResult.rows[0]) {
+      throw new NotFoundException('Training day not found.');
+    }
+
+    // Active exercises only, in their builder order, resolved to the library's
+    // current name. A removed (deactivated) exercise is excluded here, but its
+    // past sets still live under its library id.
+    const exercisesResult = await this.db.query<{
+      exercise_library_id: number;
+      name: string;
+    }>(
+      `SELECT tde.exercise_library_id, el.name
+         FROM training_template_day_exercises tde
+         JOIN exercise_library el ON el.id = tde.exercise_library_id
+        WHERE tde.day_id = $1 AND tde.is_active = true
+        ORDER BY tde.position, tde.id`,
+      [dayId],
+    );
+    const exercises = exercisesResult.rows;
+    if (exercises.length === 0) {
+      throw new BadRequestException(
+        'This training day has no exercises to work through.',
+      );
+    }
+
+    const config = await this.trainingConfig.getConfig(userId);
+
+    const sessionId = await this.db
+      .transaction(async (client) => {
+        const inserted = await client.query<{ id: number }>(
+          `INSERT INTO workout_sessions
+             (user_id, template_day_id, planned_reps, rest_seconds, sets_per_exercise)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id`,
+          [
+            userId,
+            dayId,
+            config.reps,
+            config.restPeriod,
+            config.setsPerExercise,
+          ],
+        );
+        const id = inserted.rows[0]?.id;
+        if (id === undefined) {
+          throw new Error('Could not create the workout session.');
+        }
+
+        let firstExerciseId: number | undefined;
+        for (const [position, exercise] of exercises.entries()) {
+          const row = await client.query<{ id: number }>(
+            `INSERT INTO workout_session_exercises
+               (session_id, position, exercise_library_id, name)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id`,
+            [id, position, exercise.exercise_library_id, exercise.name],
+          );
+          if (position === 0) {
+            firstExerciseId = row.rows[0]?.id;
+          }
+        }
+        if (firstExerciseId === undefined) {
+          throw new Error('Could not seed the workout exercise queue.');
+        }
+
+        await this.recordEvent(client, id, 'workout_started', 0, firstExerciseId, 1);
+        await this.recordEvent(
+          client,
+          id,
+          'exercise_started',
+          0,
+          firstExerciseId,
+          1,
+        );
+        return id;
+      })
+      .catch((err: unknown) => {
+        if (this.isUniqueViolation(err)) {
+          throw new ConflictException('A workout is already in progress.');
+        }
+        throw err;
+      });
+
+    const state = await this.getWorkout(userId, sessionId);
+    if (!state) {
+      throw new Error('Could not read back the workout that was just started.');
+    }
+    return state;
+  }
+
+  /**
    * Persists the typed weight/reps for the current set before it is committed.
    * Ignored once the workout is over. Both fields are optional: a null clears
    * that side of the draft.
@@ -939,6 +1215,7 @@ export class WorkoutService implements OnModuleInit {
     userId: number,
     weight: number,
     reps: number,
+    details: SetDetails = { rir: null, rpe: null, isWarmup: false },
   ): Promise<WorkoutState> {
     return this.db.transaction(async (client) => {
       const session = await this.lockActiveSession(client, userId);
@@ -975,11 +1252,15 @@ export class WorkoutService implements OnModuleInit {
       await client.query(
         `INSERT INTO workout_sets
            (workout_session_id, exercise_id, set_number, planned_reps, actual_reps,
-            planned_weight, actual_weight, started_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::timestamptz, now()))
+            planned_weight, actual_weight, started_at, rir, rpe, is_warmup)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::timestamptz, now()),
+                 $9, $10, $11)
          ON CONFLICT (workout_session_id, exercise_id, set_number) DO UPDATE
            SET actual_reps = EXCLUDED.actual_reps,
                actual_weight = EXCLUDED.actual_weight,
+               rir = EXCLUDED.rir,
+               rpe = EXCLUDED.rpe,
+               is_warmup = EXCLUDED.is_warmup,
                completed_at = now()`,
         [
           session.id,
@@ -990,6 +1271,9 @@ export class WorkoutService implements OnModuleInit {
           plannedWeight,
           weight,
           session.set_started_at,
+          details.rir,
+          details.rpe,
+          details.isWarmup,
         ],
       );
       await client.query(
@@ -1469,10 +1753,11 @@ export class WorkoutService implements OnModuleInit {
       id: number;
       position: number;
       name: string;
+      exercise_library_id: number | null;
       deferred_at: Date | null;
       completed_sets: number;
     }>(
-      `SELECT e.id, e.position, e.name, e.deferred_at,
+      `SELECT e.id, e.position, e.name, e.exercise_library_id, e.deferred_at,
               count(ws.id)::int AS completed_sets
          FROM workout_session_exercises e
          LEFT JOIN workout_sets ws ON ws.exercise_id = e.id
@@ -1484,6 +1769,8 @@ export class WorkoutService implements OnModuleInit {
     const exercises: WorkoutExercise[] = exercisesResult.rows.map((row) => ({
       position: row.position,
       name: row.name,
+      exerciseLibraryId:
+        row.exercise_library_id === null ? null : Number(row.exercise_library_id),
       deferred: row.deferred_at !== null,
       completedSets: row.completed_sets,
     }));
@@ -1492,6 +1779,10 @@ export class WorkoutService implements OnModuleInit {
     const currentExercise = exercisesResult.rows[session.exercise_position];
     const currentExerciseId = currentExercise?.id ?? null;
     const exerciseName = currentExercise?.name ?? '';
+    const currentExerciseLibraryId =
+      currentExercise?.exercise_library_id == null
+        ? null
+        : Number(currentExercise.exercise_library_id);
 
     // Counted by exercise identity, so a reordered queue never changes what a
     // finished workout reports.
@@ -1569,6 +1860,7 @@ export class WorkoutService implements OnModuleInit {
       exerciseIndex: session.exercise_position,
       exerciseCount: exercises.length,
       exerciseName,
+      exerciseLibraryId: currentExerciseLibraryId,
       deferredCount,
       setNumber: session.set_number,
       setsPerExercise: session.sets_per_exercise,

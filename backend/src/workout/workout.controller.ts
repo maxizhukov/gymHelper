@@ -20,6 +20,7 @@ import {
   validateExerciseNameQuery,
   validateFinishSetDto,
   validateSaveDraftDto,
+  validateStartTemplateDayDto,
   validateStartWorkoutDto,
 } from './dto/workout.dto';
 import {
@@ -73,6 +74,28 @@ export class WorkoutController {
   }
 
   /**
+   * The same panel resolved by the library id the Training Builder assigns, so
+   * history follows a movement even when it is removed from a day and added
+   * back. Declared before ':id' so the literal path wins.
+   */
+  @Get('exercise-history/:libraryId')
+  async exerciseHistory(
+    @Param('libraryId') libraryId: string,
+    @Req() req: Request,
+  ): Promise<{ history: ExerciseHistory }> {
+    const user = await this.currentUser(req);
+    if (!ID_PATTERN.test(libraryId)) {
+      throw new BadRequestException('Invalid exercise id.');
+    }
+    return {
+      history: await this.workoutService.getExerciseHistoryByLibraryId(
+        user.id,
+        Number(libraryId),
+      ),
+    };
+  }
+
+  /**
    * One of the user's workouts, in progress or finished. Declared after
    * 'active' so that literal path wins over this parameterised one.
    */
@@ -104,6 +127,25 @@ export class WorkoutController {
     return { workout: await this.workoutService.startWorkout(user.id, slug) };
   }
 
+  /**
+   * Starts a workout from a Training Builder day. 409 when one is already in
+   * progress. The day must belong to a template the user owns.
+   */
+  @Post('start-template-day')
+  async startTemplateDay(
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<{ workout: WorkoutState }> {
+    const user = await this.currentUser(req);
+    const { dayId } = validateStartTemplateDayDto(body);
+    return {
+      workout: await this.workoutService.startWorkoutFromTemplateDay(
+        user.id,
+        dayId,
+      ),
+    };
+  }
+
   /** Persists weight/reps as they are typed, before the set is committed. */
   @Post('draft')
   @HttpCode(200)
@@ -124,9 +166,13 @@ export class WorkoutController {
     @Req() req: Request,
   ): Promise<{ workout: WorkoutState }> {
     const user = await this.currentUser(req);
-    const { weight, reps } = validateFinishSetDto(body);
+    const { weight, reps, rir, rpe, isWarmup } = validateFinishSetDto(body);
     return {
-      workout: await this.workoutService.finishSet(user.id, weight, reps),
+      workout: await this.workoutService.finishSet(user.id, weight, reps, {
+        rir,
+        rpe,
+        isWarmup,
+      }),
     };
   }
 
