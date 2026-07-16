@@ -37,9 +37,11 @@ const VERTICAL_PULL = 'vertical pull';
 const HORIZONTAL_PULL = 'horizontal pull';
 const ISOMETRIC_HORIZONTAL_PULL = 'isometric horizontal pull';
 const LAT_ISOLATION = 'shoulder extension / lat isolation';
+const SCAPULAR_ELEVATION = 'scapular elevation';
 const CATEGORY = 'Back and Neck';
 const MUSCLE_GROUP_LOWER_BACK = 'Lower Back';
 const MUSCLE_GROUP_LATS = 'Lats';
+const MUSCLE_GROUP_TRAPEZIUS = 'Trapezius';
 
 /** Attaches the shared category, muscle group, and null difficulty to a group. */
 function withGroup(
@@ -136,7 +138,19 @@ const LATS_SEED = withGroup(MUSCLE_GROUP_LATS, [
   { name: 'Straight-Arm Lat Pulldown', equipment: 'cable machine', movementPattern: LAT_ISOLATION },
 ]);
 
-const EXERCISE_SEED: ExerciseSeed[] = [...LOWER_BACK_SEED, ...LATS_SEED];
+const TRAPEZIUS_SEED = withGroup(MUSCLE_GROUP_TRAPEZIUS, [
+  { name: 'Standing Dumbbell Shrugs', equipment: 'dumbbells', movementPattern: SCAPULAR_ELEVATION },
+  { name: 'Standing Barbell Shrugs', equipment: 'barbell', movementPattern: SCAPULAR_ELEVATION },
+  { name: 'Machine Shrugs', equipment: 'shrug machine', movementPattern: SCAPULAR_ELEVATION },
+  { name: 'Standing Smith Machine Shrugs', equipment: 'smith machine', movementPattern: SCAPULAR_ELEVATION },
+  { name: 'Resistance Band Shrugs', equipment: 'resistance band', movementPattern: SCAPULAR_ELEVATION },
+]);
+
+const EXERCISE_SEED: ExerciseSeed[] = [
+  ...LOWER_BACK_SEED,
+  ...LATS_SEED,
+  ...TRAPEZIUS_SEED,
+];
 
 interface ExerciseRow {
   id: number;
