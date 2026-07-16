@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { useTrainingDays } from '../training-days'
 import { useActiveWorkout } from '../workout'
+import ExercisesPanel from './ExercisesPanel'
 import FoodPanel from './FoodPanel'
 import StatsPanel from './StatsPanel'
 
@@ -48,6 +49,9 @@ export default function HomePage() {
           </Tabs.Tab>
           <Tabs.Tab className="tab" value="food">
             Food
+          </Tabs.Tab>
+          <Tabs.Tab className="tab" value="exercises">
+            Exercises
           </Tabs.Tab>
           <Tabs.Indicator className="tab-indicator" />
         </Tabs.List>
@@ -95,6 +99,10 @@ export default function HomePage() {
 
         <Tabs.Panel className="tab-panel" value="food">
           {tab === 'food' && <FoodPanel />}
+        </Tabs.Panel>
+
+        <Tabs.Panel className="tab-panel" value="exercises">
+          {tab === 'exercises' && <ExercisesPanel />}
         </Tabs.Panel>
       </Tabs.Root>
 
