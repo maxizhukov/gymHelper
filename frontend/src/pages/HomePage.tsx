@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { useTemplate, useTemplates } from '../training-builder'
-import { startWorkoutFromTemplateDay, useActiveWorkout } from '../workout'
+import { useActiveWorkout } from '../workout'
 import ExercisesPanel from './ExercisesPanel'
 import FoodPanel from './FoodPanel'
 import StatsPanel from './StatsPanel'
 import TrainingBuilderPanel from './TrainingBuilderPanel'
+import WorkoutPreview from './WorkoutPreview'
 
 /** The four main sections reachable from the home screen. */
 type Section = 'builder' | 'exercises' | 'food' | 'stats'
@@ -180,9 +181,10 @@ function StartTraining({ onOpenBuilder }: { onOpenBuilder: () => void }) {
 }
 
 /**
- * The days of one plan, and the button that starts the chosen one. Selecting a
- * day previews how many exercises it holds; an empty day cannot be started and
- * instead points at the Training Builder to add exercises.
+ * The days of one plan, and the flow that leads into a workout. Selecting a day
+ * previews how many exercises it holds; pressing Preview opens a read-only
+ * "Today's workout" screen where — and only where — the workout is finally
+ * started. An empty day cannot be started and instead points at the Builder.
  */
 function PlanDays({
   templateId,
@@ -191,13 +193,14 @@ function PlanDays({
   templateId: number
   onOpenBuilder: () => void
 }) {
-  const navigate = useNavigate()
   const { state } = useTemplate(templateId)
   const [selectedDayId, setSelectedDayId] = useState<number | null>(null)
-  const [starting, setStarting] = useState(false)
-  const [error, setError] = useState('')
+  // Whether the read-only preview is open for the selected day. Opening it does
+  // not create anything — the workout session is created from the preview alone.
+  const [previewing, setPreviewing] = useState(false)
 
   const days = state.status === 'ready' ? state.data.days : []
+  const templateName = state.status === 'ready' ? state.data.name : ''
 
   // Default to the first day whenever the plan (or its days) changes.
   useEffect(() => {
@@ -232,16 +235,17 @@ function PlanDays({
 
   const selectedDay = days.find((d) => d.id === selectedDayId) ?? null
 
-  async function handleStart() {
-    if (!selectedDay || selectedDay.exercises.length === 0) return
-    setStarting(true)
-    try {
-      const result = await startWorkoutFromTemplateDay(selectedDay.id)
-      void navigate(`/workout/${result.workout.id}`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not start the workout.')
-      setStarting(false)
-    }
+  // The preview replaces the day picker until the user backs out of it, so the
+  // whole flow reads as one thing on a phone rather than two stacked panels.
+  if (previewing && selectedDay) {
+    return (
+      <WorkoutPreview
+        templateName={templateName}
+        day={selectedDay}
+        onBack={() => setPreviewing(false)}
+        onEditInBuilder={onOpenBuilder}
+      />
+    )
   }
 
   return (
@@ -270,12 +274,6 @@ function PlanDays({
         ))}
       </ul>
 
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-
       {selectedDay && selectedDay.exercises.length === 0 ? (
         <button
           type="button"
@@ -289,14 +287,10 @@ function PlanDays({
         <button
           type="button"
           className="workout-action"
-          disabled={starting || !selectedDay}
-          onClick={() => void handleStart()}
+          disabled={!selectedDay}
+          onClick={() => setPreviewing(true)}
         >
-          {starting
-            ? 'Starting…'
-            : selectedDay
-              ? `Start ${selectedDay.name}`
-              : 'Start training'}
+          {selectedDay ? `Preview ${selectedDay.name}` : 'Preview workout'}
         </button>
       )}
     </>

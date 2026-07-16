@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useExerciseLibrary, type LibraryExercise } from '../exercise-library'
 import {
   addExercise,
@@ -16,7 +15,7 @@ import {
   type TemplateDay,
   type TemplateDayExercise,
 } from '../training-builder'
-import { startWorkoutFromTemplateDay } from '../workout'
+import WorkoutPreview from './WorkoutPreview'
 
 /**
  * The Training Builder tab. Templates, their days, and the library exercises on
@@ -232,6 +231,7 @@ function TemplateEditor({
           {template.days.map((day) => (
             <DayCard
               key={day.id}
+              templateName={template.name}
               day={day}
               library={activeLibrary}
               onChange={reload}
@@ -246,19 +246,21 @@ function TemplateEditor({
 
 /** One day: its name, its exercises (remove / reorder), an add picker, and Start. */
 function DayCard({
+  templateName,
   day,
   library,
   onChange,
   onError,
 }: {
+  templateName: string
   day: TemplateDay
   library: LibraryExercise[]
   onChange: () => void
   onError: (message: string) => void
 }) {
-  const navigate = useNavigate()
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [starting, setStarting] = useState(false)
+  // Opening the preview creates nothing; the workout is started from there.
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   async function act(action: () => Promise<unknown>) {
     try {
@@ -279,21 +281,22 @@ function DayCard({
     await act(() => reorderExercises(day.id, ids))
   }
 
-  async function handleStart() {
-    setStarting(true)
-    try {
-      const result = await startWorkoutFromTemplateDay(day.id)
-      void navigate(`/workout/${result.workout.id}`)
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Could not start the workout.')
-      setStarting(false)
-    }
-  }
-
   const alreadyOn = useMemo(
     () => new Set(day.exercises.map((e) => e.exerciseLibraryId)),
     [day.exercises],
   )
+
+  if (previewOpen) {
+    return (
+      <li className="card builder-day-card">
+        <WorkoutPreview
+          templateName={templateName}
+          day={day}
+          onBack={() => setPreviewOpen(false)}
+        />
+      </li>
+    )
+  }
 
   return (
     <li className="card builder-day-card">
@@ -354,10 +357,10 @@ function DayCard({
       <button
         type="button"
         className="workout-action"
-        disabled={starting || day.exercises.length === 0}
-        onClick={() => void handleStart()}
+        disabled={day.exercises.length === 0}
+        onClick={() => setPreviewOpen(true)}
       >
-        {starting ? 'Starting…' : 'Start workout'}
+        Preview workout
       </button>
     </li>
   )
