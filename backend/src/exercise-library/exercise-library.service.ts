@@ -33,8 +33,26 @@ interface ExerciseSeed {
 
 const HIP_HINGE = 'hip hinge';
 const SPINAL_EXTENSION = 'spinal extension / hip extension';
+const VERTICAL_PULL = 'vertical pull';
+const HORIZONTAL_PULL = 'horizontal pull';
+const ISOMETRIC_HORIZONTAL_PULL = 'isometric horizontal pull';
+const LAT_ISOLATION = 'shoulder extension / lat isolation';
 const CATEGORY = 'Back and Neck';
-const MUSCLE_GROUP = 'Lower Back';
+const MUSCLE_GROUP_LOWER_BACK = 'Lower Back';
+const MUSCLE_GROUP_LATS = 'Lats';
+
+/** Attaches the shared category, muscle group, and null difficulty to a group. */
+function withGroup(
+  muscleGroup: string,
+  rows: Pick<ExerciseSeed, 'name' | 'equipment' | 'movementPattern'>[],
+): ExerciseSeed[] {
+  return rows.map((row) => ({
+    ...row,
+    category: CATEGORY,
+    muscleGroup,
+    difficulty: null,
+  }));
+}
 
 /**
  * The initial catalogue, written to the database once. This is seed data, not
@@ -43,7 +61,7 @@ const MUSCLE_GROUP = 'Lower Back';
  * so re-deploying never duplicates or overwrites, and later edits made in the
  * database survive restarts.
  */
-const EXERCISE_SEED: ExerciseSeed[] = [
+const LOWER_BACK_SEED = withGroup(MUSCLE_GROUP_LOWER_BACK, [
   { name: 'Hyperextension', equipment: 'bodyweight / hyperextension bench', movementPattern: SPINAL_EXTENSION },
   { name: 'Barbell Good Morning', equipment: 'barbell', movementPattern: HIP_HINGE },
   { name: 'Hack Squat Machine Good Morning', equipment: 'hack squat machine', movementPattern: HIP_HINGE },
@@ -65,12 +83,60 @@ const EXERCISE_SEED: ExerciseSeed[] = [
   { name: 'Resistance Band Deadlift', equipment: 'resistance band', movementPattern: HIP_HINGE },
   { name: 'Isometric Deadlift Hold', equipment: 'barbell', movementPattern: HIP_HINGE },
   { name: 'Machine Back Extension', equipment: 'back extension machine', movementPattern: SPINAL_EXTENSION },
-].map((row) => ({
-  ...row,
-  category: CATEGORY,
-  muscleGroup: MUSCLE_GROUP,
-  difficulty: null,
-}));
+]);
+
+const LATS_SEED = withGroup(MUSCLE_GROUP_LATS, [
+  { name: 'Side Pull-Ups Using a Sheet', equipment: 'sheet / bodyweight', movementPattern: VERTICAL_PULL },
+  { name: 'Side TRX Pull-Ups', equipment: 'TRX / suspension trainer', movementPattern: VERTICAL_PULL },
+  { name: 'Wide-Grip Pull-Ups to the Chest', equipment: 'bodyweight / pull-up bar', movementPattern: VERTICAL_PULL },
+  { name: 'Wide-Grip Pull-Ups in a Gravitron Machine', equipment: 'assisted pull-up machine / gravitron', movementPattern: VERTICAL_PULL },
+  { name: 'Wide-Grip Behind-the-Neck Pull-Ups', equipment: 'bodyweight / pull-up bar', movementPattern: VERTICAL_PULL },
+  { name: 'Strap-Assisted Pull-Ups', equipment: 'straps / pull-up bar', movementPattern: VERTICAL_PULL },
+  { name: 'Assisted Pull-Ups on Parallel Bars', equipment: 'parallel bars', movementPattern: VERTICAL_PULL },
+  { name: 'Vertical TRX Pull-Ups', equipment: 'TRX / suspension trainer', movementPattern: VERTICAL_PULL },
+  { name: 'Floor Pull-Ups', equipment: 'bodyweight / pull-up bar', movementPattern: VERTICAL_PULL },
+  { name: 'Parallel-Bar Pull-Ups', equipment: 'parallel bars', movementPattern: VERTICAL_PULL },
+  { name: 'Close-Grip Pull-Ups', equipment: 'bodyweight / pull-up bar', movementPattern: VERTICAL_PULL },
+  { name: 'Smith Machine Inverted Rows', equipment: 'smith machine', movementPattern: HORIZONTAL_PULL },
+  { name: 'Reverse-Grip Pull-Ups', equipment: 'bodyweight / pull-up bar', movementPattern: VERTICAL_PULL },
+  { name: 'Reverse-Grip Pull-Ups in a Gravitron Machine', equipment: 'assisted pull-up machine / gravitron', movementPattern: VERTICAL_PULL },
+  { name: 'Pull-Ups Using a Sheet', equipment: 'sheet / bodyweight', movementPattern: VERTICAL_PULL },
+  { name: 'Plate-Loaded Row Machine', equipment: 'plate-loaded row machine', movementPattern: HORIZONTAL_PULL },
+  { name: 'Behind-the-Neck Lat Pulldown', equipment: 'cable machine / lat pulldown machine', movementPattern: VERTICAL_PULL },
+  { name: 'Seated Cable Row', equipment: 'cable machine', movementPattern: HORIZONTAL_PULL },
+  { name: 'Bent-Over Dumbbell Row', equipment: 'dumbbell', movementPattern: HORIZONTAL_PULL },
+  { name: 'Bent-Over Barbell Row', equipment: 'barbell', movementPattern: HORIZONTAL_PULL },
+  { name: 'Smith Machine Bent-Over Barbell Row', equipment: 'smith machine', movementPattern: HORIZONTAL_PULL },
+  { name: 'Wide-Grip Lat Pulldown to the Chest', equipment: 'cable machine / lat pulldown machine', movementPattern: VERTICAL_PULL },
+  { name: 'Reverse-Grip Lat Pulldown to the Chest', equipment: 'cable machine / lat pulldown machine', movementPattern: VERTICAL_PULL },
+  { name: 'Close-Grip Lat Pulldown', equipment: 'cable machine / lat pulldown machine', movementPattern: VERTICAL_PULL },
+  { name: 'One-Arm Dumbbell Row', equipment: 'dumbbell', movementPattern: HORIZONTAL_PULL },
+  { name: 'One-Arm Smith Machine Row', equipment: 'smith machine', movementPattern: HORIZONTAL_PULL },
+  { name: 'Bent-Over Cable Row', equipment: 'cable machine', movementPattern: HORIZONTAL_PULL },
+  { name: 'Bent-Over T-Bar Row', equipment: 'T-bar row', movementPattern: HORIZONTAL_PULL },
+  { name: 'Chest-Supported T-Bar Row', equipment: 'T-bar row', movementPattern: HORIZONTAL_PULL },
+  { name: 'Vertical Lever Row Machine', equipment: 'lever row machine', movementPattern: HORIZONTAL_PULL },
+  { name: 'Lying Dumbbell Row', equipment: 'dumbbell', movementPattern: HORIZONTAL_PULL },
+  { name: 'Bent-Over Low Cable Row', equipment: 'cable machine', movementPattern: HORIZONTAL_PULL },
+  { name: 'Lying Low Cable Row', equipment: 'cable machine', movementPattern: HORIZONTAL_PULL },
+  { name: 'Bent-Over Resistance Band Row', equipment: 'resistance band', movementPattern: HORIZONTAL_PULL },
+  { name: 'One-Arm Bent-Over Resistance Band Row', equipment: 'resistance band', movementPattern: HORIZONTAL_PULL },
+  { name: 'Bent-Over Low Resistance Band Row', equipment: 'resistance band', movementPattern: HORIZONTAL_PULL },
+  { name: 'Seated Resistance Band Row', equipment: 'resistance band', movementPattern: HORIZONTAL_PULL },
+  { name: 'Standing Resistance Band Row', equipment: 'resistance band', movementPattern: HORIZONTAL_PULL },
+  { name: 'Bent-Over Sandbag Row', equipment: 'sandbag', movementPattern: HORIZONTAL_PULL },
+  { name: 'Seated Towel Row', equipment: 'towel / bodyweight', movementPattern: HORIZONTAL_PULL },
+  { name: 'Static Seated Row Hold', equipment: 'cable machine', movementPattern: ISOMETRIC_HORIZONTAL_PULL },
+  { name: 'TRX Pullover', equipment: 'TRX / suspension trainer', movementPattern: LAT_ISOLATION },
+  { name: 'Sheet Pullover', equipment: 'sheet / bodyweight', movementPattern: LAT_ISOLATION },
+  { name: 'Kneeling Cable Pullover', equipment: 'cable machine', movementPattern: LAT_ISOLATION },
+  { name: 'Lying Dumbbell Pullover', equipment: 'dumbbell', movementPattern: LAT_ISOLATION },
+  { name: 'Lying Barbell Pullover', equipment: 'barbell', movementPattern: LAT_ISOLATION },
+  { name: 'Lying Resistance Band Pullover', equipment: 'resistance band', movementPattern: LAT_ISOLATION },
+  { name: 'Straight-Arm Lat Pulldown', equipment: 'cable machine', movementPattern: LAT_ISOLATION },
+]);
+
+const EXERCISE_SEED: ExerciseSeed[] = [...LOWER_BACK_SEED, ...LATS_SEED];
 
 interface ExerciseRow {
   id: number;
