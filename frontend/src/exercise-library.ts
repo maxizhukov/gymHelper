@@ -18,6 +18,10 @@ export type LibraryExercise = {
   equipment: string | null
   movementPattern: string | null
   difficulty: string | null
+  descriptionRu: string | null
+  sourceUrl: string | null
+  videoUrl: string | null
+  thumbnailUrl: string | null
   isActive: boolean
   sortOrder: number | null
 }

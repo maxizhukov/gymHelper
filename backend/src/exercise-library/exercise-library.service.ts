@@ -17,6 +17,10 @@ export interface LibraryExercise {
   equipment: string | null;
   movementPattern: string | null;
   difficulty: string | null;
+  descriptionRu: string | null;
+  sourceUrl: string | null;
+  videoUrl: string | null;
+  thumbnailUrl: string | null;
   isActive: boolean;
   sortOrder: number | null;
 }
@@ -160,6 +164,10 @@ interface ExerciseRow {
   equipment: string | null;
   movement_pattern: string | null;
   difficulty: string | null;
+  description_ru: string | null;
+  source_url: string | null;
+  video_url: string | null;
+  thumbnail_url: string | null;
   is_active: boolean;
   sort_order: number | null;
 }
@@ -173,6 +181,10 @@ const EXERCISE_SELECT = `
   equipment,
   movement_pattern,
   difficulty,
+  description_ru,
+  source_url,
+  video_url,
+  thumbnail_url,
   is_active,
   sort_order
 `;
@@ -207,6 +219,17 @@ export class ExerciseLibraryService implements OnModuleInit {
         created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
       )
+    `);
+
+    // The imported catalogue rows carry richer detail (a Russian description,
+    // the source page, a demo video, and a thumbnail). Add the columns if an
+    // older table predates them; existing rows keep whatever they already hold.
+    await this.db.query(`
+      ALTER TABLE exercise_library
+        ADD COLUMN IF NOT EXISTS description_ru TEXT,
+        ADD COLUMN IF NOT EXISTS source_url     TEXT,
+        ADD COLUMN IF NOT EXISTS video_url      TEXT,
+        ADD COLUMN IF NOT EXISTS thumbnail_url  TEXT
     `);
 
     // The natural key is the normalized (case-insensitive, whitespace-trimmed)
@@ -303,6 +326,10 @@ export class ExerciseLibraryService implements OnModuleInit {
       equipment: row.equipment,
       movementPattern: row.movement_pattern,
       difficulty: row.difficulty,
+      descriptionRu: row.description_ru,
+      sourceUrl: row.source_url,
+      videoUrl: row.video_url,
+      thumbnailUrl: row.thumbnail_url,
       isActive: row.is_active,
       sortOrder: row.sort_order === null ? null : Number(row.sort_order),
     };

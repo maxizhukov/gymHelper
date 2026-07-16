@@ -802,8 +802,78 @@
   gap: 0.75rem;
 }
 
+.exercise-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.exercise-card-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: none;
+  border: none;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.exercise-thumbnail {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--surface-muted, rgba(0, 0, 0, 0.05));
+}
+
+.exercise-card-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
 .exercise-card .message {
   text-transform: capitalize;
+}
+
+.exercise-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0 1rem 1rem;
+}
+
+.exercise-detail-description {
+  margin: 0;
+  white-space: pre-line;
+  line-height: 1.5;
+}
+
+.exercise-video {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.exercise-video iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.exercise-source {
+  font-size: 0.8rem;
+  color: var(--muted);
+  align-self: flex-start;
 }
 
 /* ── Stats tab ─────────────────────────────────────────────────────────────── */
