@@ -506,6 +506,20 @@ export function restRemainingSeconds({
   return Math.max(0, workout.restRemainingSeconds - secondsSince(receivedAt))
 }
 
+/**
+ * Seconds spent resting past the planned rest, or null when not resting or the
+ * countdown has not run out yet. Derived from timestamps, so it stays accurate
+ * after the tab was backgrounded — it is not a running interval tally.
+ */
+export function restOverSeconds({
+  workout,
+  receivedAt,
+}: AnchoredWorkout): number | null {
+  if (workout.restRemainingSeconds === null) return null
+  const over = secondsSince(receivedAt) - workout.restRemainingSeconds
+  return over > 0 ? over : null
+}
+
 /** `M:SS`, widening to `H:MM:SS` once a workout passes the hour. */
 export function formatDuration(totalSeconds: number): string {
   const seconds = Math.max(0, Math.floor(totalSeconds))

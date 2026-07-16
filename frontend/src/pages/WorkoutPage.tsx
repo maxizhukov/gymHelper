@@ -21,6 +21,7 @@ import {
   formatWeight,
   improvementOverLast,
   nextUp,
+  restOverSeconds,
   restRemainingSeconds,
   saveBodyWeight,
   saveDraft,
@@ -211,6 +212,7 @@ function ActiveWorkout({
   }
 
   const remaining = restRemainingSeconds(anchored)
+  const overRest = restOverSeconds(anchored)
   const upNext = nextUp(workout)
 
   return (
@@ -232,10 +234,18 @@ function ActiveWorkout({
 
       {workout.phase === 'rest' ? (
         <section className="workout-rest" aria-label="Rest">
-          <p className="label">Rest</p>
+          {/* Once the countdown runs out, the timer keeps going as an over-rest
+              tally so a long break does not silently sit at 0:00. */}
+          <p className="label">{overRest === null ? 'Rest' : 'Over-rest'}</p>
           {/* Announced politely so a screen reader is not interrupted every second. */}
-          <p className="rest-clock" role="timer" aria-live="off">
-            {formatDuration(remaining ?? 0)}
+          <p
+            className={`rest-clock${overRest === null ? '' : ' rest-clock-over'}`}
+            role="timer"
+            aria-live="off"
+          >
+            {overRest === null
+              ? formatDuration(remaining ?? 0)
+              : `+${formatDuration(overRest)}`}
           </p>
           <p className="workout-next-up">
             Next: {upNext.exerciseNumber} / {workout.exerciseCount}{' '}

@@ -1,6 +1,6 @@
 {
   "name": "gymhelper",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "private": true,
   "description": "The ultimate personal gym helper — React frontend + NestJS backend.",
   "scripts": {
