@@ -21,6 +21,7 @@ import {
   formatSetWeights,
   formatShortDate,
   formatWeight,
+  hasWeightRecommendations,
   improvementOverLast,
   nextUp,
   restOverSeconds,
@@ -75,6 +76,42 @@ export default function WorkoutPage() {
   const { user } = useAuth()
   const { id } = useParams<{ id: string }>()
   const { state, replace } = useWorkout(id)
+
+  // The AI weight recommendations are generated in the background when the
+  // workout starts and land a few seconds later. Poll a handful of times to pick
+  // them up, replacing the state once they arrive, then stop. No-op once they are
+  // present (a resumed workout) or the workout is finished — so an OpenAI outage
+  // costs a few quiet retries and nothing more.
+  useEffect(() => {
+    if (state.status !== 'ready' || !id) return
+    const { workout } = state.data
+    if (workout.phase === 'completed' || hasWeightRecommendations(workout)) return
+
+    let attempts = 0
+    const timer = setInterval(() => {
+      attempts += 1
+      if (attempts > 5) {
+        clearInterval(timer)
+        return
+      }
+      void (async () => {
+        try {
+          const res = await fetch(`/api/workout/${encodeURIComponent(id)}`, {
+            credentials: 'include',
+          })
+          if (!res.ok) return
+          const data = (await res.json()) as { workout: WorkoutState }
+          if (hasWeightRecommendations(data.workout)) {
+            clearInterval(timer)
+            replace({ workout: data.workout, receivedAt: Date.now() })
+          }
+        } catch {
+          // A transient failure just means the next tick tries again.
+        }
+      })()
+    }, 2500)
+    return () => clearInterval(timer)
+  }, [state, id, replace])
 
   if (!user) return null
   // An unknown or foreign workout id is not something the user can act on.
@@ -306,6 +343,15 @@ function ActiveWorkout({
             Exercise {workout.exerciseIndex + 1} / {workout.exerciseCount}
           </p>
           <h1 className="workout-exercise">{workout.exerciseName}</h1>
+
+          {/* The AI weight recommendation for this exercise, generated once at
+              workout start. Hidden entirely when there is none — a failed or
+              still-pending generation shows nothing rather than an empty line. */}
+          {workout.exercises[workout.exerciseIndex]?.aiWeightRecommendation && (
+            <p className="workout-ai-recommendation">
+              {workout.exercises[workout.exerciseIndex].aiWeightRecommendation}
+            </p>
+          )}
 
           {/* How to do the movement, folded away until asked for — it belongs to
               the exercise, not to logging a set, so it never crowds the numbers.

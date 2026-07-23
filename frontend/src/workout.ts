@@ -24,6 +24,9 @@ export type WorkoutExercise = {
   /** Sets logged against this exercise, counted by identity — so it reads zero
    *  again for an exercise that has not been started, wherever it sits now. */
   completedSets: number
+  /** One-line AI weight recommendation generated at workout start, or null when
+   *  none exists (no OpenAI, a failure, or it has not landed yet). */
+  aiWeightRecommendation: string | null
 }
 
 export type WorkoutState = {
@@ -579,6 +582,18 @@ export function useExerciseHistory(
   }, [cacheKey, url])
 
   return state
+}
+
+/**
+ * Whether the AI weight recommendations have landed on this workout. They are
+ * generated in the background at start and arrive a few seconds later, so the
+ * workout screen polls until this reads true (or gives up). An exercise with no
+ * history still gets a recommendation, so any non-null line means generation ran.
+ */
+export function hasWeightRecommendations(workout: WorkoutState): boolean {
+  return workout.exercises.some(
+    (exercise) => exercise.aiWeightRecommendation !== null,
+  )
 }
 
 /** `72.5`, `75` — trailing zeros dropped, because a rack is not a spreadsheet. */

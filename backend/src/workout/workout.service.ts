@@ -10,6 +10,7 @@ import type { PoolClient } from 'pg';
 import { bootstrapSchema } from '../database/bootstrap-schema';
 import { DatabaseService } from '../database/database.service';
 import { TrainingConfigService } from '../training/training-config.service';
+import { AiWeightRecommendationService } from './ai-weight-recommendation.service';
 import { AiWorkoutSummaryService } from './ai-workout-summary.service';
 
 /**
@@ -105,6 +106,9 @@ export interface WorkoutExercise {
   /** Sets logged against this exercise — counted by identity, so a reordered
    *  queue never moves a set from one exercise to another. */
   completedSets: number;
+  /** The one-line AI weight recommendation generated at workout start, or null
+   *  when none was generated (no OpenAI, a failure, or not yet landed). */
+  aiWeightRecommendation: string | null;
 }
 
 /**
@@ -261,6 +265,7 @@ export class WorkoutService implements OnModuleInit {
     private readonly db: DatabaseService,
     private readonly trainingConfig: TrainingConfigService,
     private readonly aiSummary: AiWorkoutSummaryService,
+    private readonly aiWeightRecommendation: AiWeightRecommendationService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -387,6 +392,22 @@ export class WorkoutService implements OnModuleInit {
          ADD COLUMN IF NOT EXISTS exercise_library_id INTEGER
            REFERENCES exercise_library(id) ON DELETE SET NULL`,
     );
+
+    // The AI weight recommendation for this exercise, generated once when the
+    // workout starts and shown under the exercise name while training. Cached on
+    // the exercise row so OpenAI is called once per workout, never again as the
+    // user walks through the exercises. `ai_weight_recommendation` is the short
+    // line the screen renders; `ai_weight_recommendation_json` keeps the full
+    // structured recommendation (action / suggested weight / confidence);
+    // `ai_weight_recommendation_generated_at` doubles as the "already generated"
+    // flag. All nullable and added after the table shipped, so existing rows read
+    // null and simply show nothing.
+    await this.db.query(`
+      ALTER TABLE workout_session_exercises
+        ADD COLUMN IF NOT EXISTS ai_weight_recommendation TEXT,
+        ADD COLUMN IF NOT EXISTS ai_weight_recommendation_json JSONB,
+        ADD COLUMN IF NOT EXISTS ai_weight_recommendation_generated_at TIMESTAMPTZ
+    `);
 
     // One row per completed set, naming the exercise it belongs to by identity.
     // The unique key makes the write idempotent, so a retried "Finish set"
@@ -1076,6 +1097,12 @@ export class WorkoutService implements OnModuleInit {
         throw err;
       });
 
+    // Generate the AI weight recommendations for this workout's exercises in the
+    // background, so the model is called once at start without delaying it.
+    // Deliberately not awaited and it never throws — a failed recommendation must
+    // not affect starting the workout; the frontend picks them up when they land.
+    void this.aiWeightRecommendation.generateForSession(userId, sessionId);
+
     const state = await this.getWorkout(userId, sessionId);
     if (!state) {
       throw new Error('Could not read back the workout that was just started.');
@@ -1185,6 +1212,9 @@ export class WorkoutService implements OnModuleInit {
         }
         throw err;
       });
+
+    // See startWorkout: generated once at start, in the background, never fatal.
+    void this.aiWeightRecommendation.generateForSession(userId, sessionId);
 
     const state = await this.getWorkout(userId, sessionId);
     if (!state) {
@@ -1788,8 +1818,10 @@ export class WorkoutService implements OnModuleInit {
       exercise_library_id: number | null;
       deferred_at: Date | null;
       completed_sets: number;
+      ai_weight_recommendation: string | null;
     }>(
       `SELECT e.id, e.position, e.name, e.exercise_library_id, e.deferred_at,
+              e.ai_weight_recommendation,
               count(ws.id)::int AS completed_sets
          FROM workout_session_exercises e
          LEFT JOIN workout_sets ws ON ws.exercise_id = e.id
@@ -1805,6 +1837,7 @@ export class WorkoutService implements OnModuleInit {
         row.exercise_library_id === null ? null : Number(row.exercise_library_id),
       deferred: row.deferred_at !== null,
       completedSets: row.completed_sets,
+      aiWeightRecommendation: row.ai_weight_recommendation ?? null,
     }));
 
     // Rows come back ordered by position, so the cursor indexes them directly.

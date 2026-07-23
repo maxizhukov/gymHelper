@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { DatabaseModule } from '../database/database.module';
 import { TrainingBuilderModule } from '../training-builder/training-builder.module';
 import { TrainingModule } from '../training/training.module';
+import { AiWeightRecommendationService } from './ai-weight-recommendation.service';
 import { AiWorkoutSummaryService } from './ai-workout-summary.service';
 import { WorkoutController } from './workout.controller';
 import { WorkoutService } from './workout.service';
@@ -23,6 +24,10 @@ import { WorkoutService } from './workout.service';
 @Module({
   imports: [DatabaseModule, AuthModule, TrainingModule, TrainingBuilderModule],
   controllers: [WorkoutController],
-  providers: [WorkoutService, AiWorkoutSummaryService],
+  providers: [
+    WorkoutService,
+    AiWorkoutSummaryService,
+    AiWeightRecommendationService,
+  ],
 })
 export class WorkoutModule {}

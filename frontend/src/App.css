@@ -420,6 +420,28 @@
   color: var(--ink);
 }
 
+.workout-ai-recommendation {
+  margin: 0.5rem 0 0;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.workout-ai-recommendation::before {
+  content: 'AI';
+  display: inline-block;
+  margin-right: 0.45rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .workout-stats {
   display: flex;
   gap: 0.75rem;

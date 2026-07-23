@@ -41,6 +41,7 @@ function workoutState(
     exerciseLibraryId: null,
     deferred: false,
     completedSets: completedSets[position],
+    aiWeightRecommendation: null,
   }))
 
   return {
@@ -121,6 +122,7 @@ describe('showMachineBusyButton', () => {
           exerciseLibraryId: null,
           deferred: false,
           completedSets: 4,
+          aiWeightRecommendation: null,
         },
         {
           position: 1,
@@ -128,6 +130,7 @@ describe('showMachineBusyButton', () => {
           exerciseLibraryId: null,
           deferred: false,
           completedSets: 0,
+          aiWeightRecommendation: null,
         },
         {
           position: 2,
@@ -135,6 +138,7 @@ describe('showMachineBusyButton', () => {
           exerciseLibraryId: null,
           deferred: true,
           completedSets: 0,
+          aiWeightRecommendation: null,
         },
         {
           position: 3,
@@ -142,6 +146,7 @@ describe('showMachineBusyButton', () => {
           exerciseLibraryId: null,
           deferred: false,
           completedSets: 0,
+          aiWeightRecommendation: null,
         },
       ],
       exerciseName: 'Incline Press',
