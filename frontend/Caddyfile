@@ -41,5 +41,11 @@
 # shared Docker network. Caddy obtains/renews its TLS cert automatically.
 invest.maksymzhukov.com {
 	encode zstd gzip
+	# HTTP Basic Auth. The bcrypt hash is injected at runtime from the
+	# git-ignored /opt/gymhelper/caddy.env (INVEST_BASIC_AUTH_HASH) — never
+	# committed to this public repo.
+	basic_auth {
+		max {$INVEST_BASIC_AUTH_HASH}
+	}
 	reverse_proxy invest-web:8000
 }

@@ -50,6 +50,11 @@ services:
       - backend
     environment:
       SITE_ADDRESS: gym.maksymzhukov.com
+    # invest.maksymzhukov.com basic-auth hash (INVEST_BASIC_AUTH_HASH); lives in
+    # a git-ignored, server-only file. Optional so gym still boots without it.
+    env_file:
+      - path: caddy.env
+        required: false
     ports:
       - "80:80"
       - "443:443"
