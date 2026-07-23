@@ -58,6 +58,7 @@ services:
       - caddy_config:/config
     networks:
       - gymhelper
+      - shared # reach the invest-web container (invest.maksymzhukov.com)
 
 networks:
   gymhelper:

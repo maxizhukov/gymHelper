@@ -36,3 +36,10 @@
 		file_server
 	}
 }
+
+# invest.maksymzhukov.com — separate project (/opt/invest), reached over the
+# shared Docker network. Caddy obtains/renews its TLS cert automatically.
+invest.maksymzhukov.com {
+	encode zstd gzip
+	reverse_proxy invest-web:8000
+}
