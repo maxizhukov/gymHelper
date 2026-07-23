@@ -651,6 +651,11 @@ export class AiProgressSummaryService implements OnModuleInit {
       params,
     );
 
+    // Group by the full COALESCE expression, not the output alias `name`.
+    // `training_template_days` also has a column called `name`, so a bare
+    // `GROUP BY name` binds to that input column (Postgres prefers an input
+    // column over an output alias when both match a simple name), which leaves
+    // `d.day` in the SELECT ungrouped and raises error 42803.
     const days = await this.db.query<{ name: string; workouts: number }>(
       `SELECT COALESCE(d.day, td.name, 'Workout') AS name,
               COUNT(*)::int AS workouts
@@ -660,8 +665,8 @@ export class AiProgressSummaryService implements OnModuleInit {
         WHERE s.user_id = $1
           AND s.completed_at IS NOT NULL
           ${windowClause}
-        GROUP BY name
-        ORDER BY workouts DESC, name`,
+        GROUP BY COALESCE(d.day, td.name, 'Workout')
+        ORDER BY workouts DESC, COALESCE(d.day, td.name, 'Workout')`,
       params,
     );
 
