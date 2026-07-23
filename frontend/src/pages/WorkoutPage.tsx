@@ -33,11 +33,23 @@ import {
   useExerciseHistory,
   useTicker,
   useWorkout,
+  useWorkoutSummary,
   type AnchoredWorkout,
   type ExerciseHistory,
+  type ExerciseMetric,
   type Improvement,
+  type WorkoutAiSummary,
+  type WorkoutAssessment,
   type WorkoutState,
 } from '../workout'
+
+/** What the assessment badge reads for each verdict. */
+const ASSESSMENT_LABEL: Record<WorkoutAssessment, string> = {
+  better: 'Better than last time',
+  similar: 'On par with last time',
+  worse: 'Down on last time',
+  first: 'First session',
+}
 
 /** What the green marker says when today's numbers beat last time's. */
 const IMPROVEMENT_LABEL: Record<Exclude<Improvement, 'none'>, string> = {
@@ -886,6 +898,10 @@ function WorkoutSummary({ workout }: { workout: WorkoutState }) {
         )}
       </dl>
 
+      {/* The AI coach's read on this session vs previous sessions of the same
+          training day — text plus the numbers it was drawn from. */}
+      <WorkoutAiSummaryPanel workoutId={workout.id} />
+
       <Form className="settings-form" onFormSubmit={handleSave}>
         <Field.Root name="bodyWeight" className="field">
           <Field.Label>What is your current body weight? (kg)</Field.Label>
@@ -933,4 +949,314 @@ function WorkoutSummary({ workout }: { workout: WorkoutState }) {
       </Link>
     </main>
   )
+}
+
+/** A whole-number figure with thousands separators — volumes get large. */
+function formatVolume(kg: number): string {
+  return Math.round(kg).toLocaleString()
+}
+
+/**
+ * The AI post-workout summary and the numbers behind it. Fetched lazily when the
+ * summary screen renders; the server generates it in the background the moment
+ * the workout completes, so this usually returns the cached copy at once.
+ */
+function WorkoutAiSummaryPanel({ workoutId }: { workoutId: number }) {
+  const { state, regenerate } = useWorkoutSummary(workoutId)
+  const [retrying, setRetrying] = useState(false)
+
+  async function handleRetry() {
+    setRetrying(true)
+    try {
+      await regenerate()
+    } finally {
+      setRetrying(false)
+    }
+  }
+
+  return (
+    <section className="ai-summary" aria-label="AI workout summary">
+      <p className="ai-summary-kicker">AI Summary</p>
+
+      {state.status === 'loading' && (
+        <p className="history-note">Generating your summary…</p>
+      )}
+
+      {state.status === 'error' && (
+        <>
+          <p className="error" role="alert">
+            {state.message}
+          </p>
+          <Button
+            type="button"
+            className="workout-secondary"
+            disabled={retrying}
+            onClick={() => void handleRetry()}
+          >
+            {retrying ? 'Retrying…' : 'Try again'}
+          </Button>
+        </>
+      )}
+
+      {state.status === 'ready' && (
+        <AiSummaryBody
+          summary={state.data}
+          retrying={retrying}
+          onRegenerate={() => void handleRetry()}
+        />
+      )}
+    </section>
+  )
+}
+
+/** The rendered summary: badge, narrative, and the visual comparison data. */
+function AiSummaryBody({
+  summary,
+  retrying,
+  onRegenerate,
+}: {
+  summary: WorkoutAiSummary
+  retrying: boolean
+  onRegenerate: () => void
+}) {
+  const { metrics } = summary
+
+  return (
+    <>
+      <span className={`ai-badge ai-badge-${summary.assessment}`}>
+        {ASSESSMENT_LABEL[summary.assessment]}
+      </span>
+
+      <h2 className="ai-summary-headline">{summary.headline}</h2>
+
+      {/* The model reply may use short "- " bullet lines; render them as such. */}
+      <SummaryText text={summary.summary} />
+
+      {summary.status === 'unavailable' && (
+        <p className="ai-summary-note">
+          The AI coach note is unavailable right now — the numbers below are
+          still your real results.
+        </p>
+      )}
+
+      {/* Volume for the current session vs the previous same-day one. */}
+      <VolumeCompare summary={summary} />
+
+      {/* The ~1-month trend across the last few same-day sessions. */}
+      {metrics.volumeTrend.length > 1 && (
+        <VolumeTrend summary={summary} />
+      )}
+
+      {/* Per-exercise volume change vs the previous same-day session. */}
+      {metrics.exercises.length > 0 && (
+        <ExerciseTable exercises={metrics.exercises} />
+      )}
+
+      {summary.improvements.length > 0 && (
+        <SummaryChips
+          heading="Improved"
+          items={summary.improvements}
+          tone="up"
+        />
+      )}
+      {summary.declines.length > 0 && (
+        <SummaryChips
+          heading="Watch"
+          items={summary.declines}
+          tone="down"
+        />
+      )}
+
+      {summary.exerciseNotes.length > 0 && (
+        <ul className="ai-summary-notes">
+          {summary.exerciseNotes.map((note, index) => (
+            <li key={index}>{note}</li>
+          ))}
+        </ul>
+      )}
+
+      {summary.trendNote && (
+        <p className="ai-summary-trend-note">{summary.trendNote}</p>
+      )}
+      {summary.effortNote && (
+        <p className="ai-summary-effort-note">{summary.effortNote}</p>
+      )}
+
+      {summary.recommendation && (
+        <p className="ai-recommendation">
+          <span className="ai-recommendation-label">Next time</span>
+          {summary.recommendation}
+        </p>
+      )}
+
+      <button
+        type="button"
+        className="ai-summary-regenerate"
+        disabled={retrying}
+        onClick={onRegenerate}
+      >
+        {retrying ? 'Regenerating…' : 'Regenerate'}
+      </button>
+    </>
+  )
+}
+
+/** Renders the model's text, turning "- " lines into a bullet list. */
+function SummaryText({ text }: { text: string }) {
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean)
+  const bullets = lines.every((line) => line.startsWith('- '))
+  if (bullets && lines.length > 1) {
+    return (
+      <ul className="ai-summary-text-list">
+        {lines.map((line, index) => (
+          <li key={index}>{line.replace(/^-\s+/, '')}</li>
+        ))}
+      </ul>
+    )
+  }
+  return (
+    <>
+      {lines.map((line, index) => (
+        <p key={index} className="ai-summary-text">
+          {line.replace(/^-\s+/, '')}
+        </p>
+      ))}
+    </>
+  )
+}
+
+/** Current vs previous total volume, with the change between them. */
+function VolumeCompare({ summary }: { summary: WorkoutAiSummary }) {
+  const { current, previous } = summary.metrics
+  const delta = previous ? Math.round(current.volume - previous.volume) : null
+  const pct =
+    previous && previous.volume > 0
+      ? Math.round(((current.volume - previous.volume) / previous.volume) * 100)
+      : null
+
+  return (
+    <div className="ai-volume">
+      <div className="ai-volume-cell">
+        <p className="label">This session</p>
+        <p className="ai-volume-value">{formatVolume(current.volume)} kg</p>
+      </div>
+      <div className="ai-volume-cell">
+        <p className="label">Previous</p>
+        <p className="ai-volume-value">
+          {previous ? `${formatVolume(previous.volume)} kg` : '—'}
+        </p>
+      </div>
+      <div className="ai-volume-cell">
+        <p className="label">Change</p>
+        <p className={`ai-volume-value ${deltaClass(delta)}`}>
+          {delta === null
+            ? '—'
+            : `${delta >= 0 ? '+' : ''}${formatVolume(delta)} kg${
+                pct === null ? '' : ` (${pct >= 0 ? '+' : ''}${pct}%)`
+              }`}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** A small bar chart of total volume across the last few same-day sessions. */
+function VolumeTrend({ summary }: { summary: WorkoutAiSummary }) {
+  const points = summary.metrics.volumeTrend
+  const max = Math.max(...points.map((point) => point.volume), 1)
+
+  return (
+    <div className="ai-trend">
+      <p className="label">Volume trend (same day)</p>
+      <div className="ai-trend-bars">
+        {points.map((point, index) => {
+          const isCurrent = index === points.length - 1
+          const height = Math.max(4, Math.round((point.volume / max) * 100))
+          return (
+            <div className="ai-trend-bar" key={`${point.date}-${index}`}>
+              <span className="ai-trend-amount">
+                {formatVolume(point.volume)}
+              </span>
+              <span
+                className={`ai-trend-fill${isCurrent ? ' ai-trend-fill-current' : ''}`}
+                style={{ height: `${height}%` }}
+              />
+              <span className="ai-trend-date">
+                {formatShortDate(point.date)}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/** Per-exercise volume this session vs the previous same-day one. */
+function ExerciseTable({ exercises }: { exercises: ExerciseMetric[] }) {
+  return (
+    <div className="ai-exercises">
+      <p className="label">Per-exercise volume</p>
+      <table className="ai-exercise-table">
+        <thead>
+          <tr>
+            <th>Exercise</th>
+            <th>This</th>
+            <th>Prev</th>
+            <th>Δ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {exercises.map((exercise) => (
+            <tr key={exercise.name}>
+              <td className="ai-exercise-name">{exercise.name}</td>
+              <td>{formatVolume(exercise.currentVolume)}</td>
+              <td>
+                {exercise.previousVolume === null
+                  ? '—'
+                  : formatVolume(exercise.previousVolume)}
+              </td>
+              <td className={deltaClass(exercise.volumeDelta)}>
+                {exercise.volumeDelta === null
+                  ? 'new'
+                  : `${exercise.volumeDelta >= 0 ? '+' : ''}${formatVolume(
+                      exercise.volumeDelta,
+                    )}`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** A titled row of small chips — improved or declining exercises. */
+function SummaryChips({
+  heading,
+  items,
+  tone,
+}: {
+  heading: string
+  items: string[]
+  tone: 'up' | 'down'
+}) {
+  return (
+    <div className="ai-chips">
+      <p className="label">{heading}</p>
+      <div className="ai-chip-row">
+        {items.map((item, index) => (
+          <span key={index} className={`ai-chip ai-chip-${tone}`}>
+            {item}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Green for a gain, red for a drop, muted for flat or unknown. */
+function deltaClass(delta: number | null): string {
+  if (delta === null || delta === 0) return 'ai-delta-flat'
+  return delta > 0 ? 'ai-delta-up' : 'ai-delta-down'
 }

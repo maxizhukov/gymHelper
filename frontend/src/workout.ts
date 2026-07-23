@@ -91,6 +91,68 @@ export type ExerciseHistory = {
   best: { weight: number; reps: number } | null
 }
 
+/** The overall verdict of a post-workout summary, kept to a small closed set. */
+export type WorkoutAssessment = 'better' | 'similar' | 'worse' | 'first'
+
+/** The best set of an exercise, by estimated 1RM. */
+export type BestSet = { weight: number; reps: number; e1rm: number }
+
+/** One point on the volume trend: a past (or the current) same-day session. */
+export type TrendPoint = {
+  date: string
+  volume: number
+  totalReps: number
+  bestE1rm: number
+}
+
+/** Per-exercise comparison of the current workout against the previous same day. */
+export type ExerciseMetric = {
+  name: string
+  currentVolume: number
+  currentReps: number
+  currentBest: BestSet | null
+  previousVolume: number | null
+  previousBest: BestSet | null
+  volumeDelta: number | null
+}
+
+/** The deterministic numbers behind the summary — the data the UI charts. */
+export type WorkoutSummaryMetrics = {
+  isFirstSession: boolean
+  current: { volume: number; totalReps: number; bestE1rm: number; date: string }
+  previous: {
+    volume: number
+    totalReps: number
+    bestE1rm: number
+    date: string
+  } | null
+  /** Oldest → newest, including the current session as the last point. */
+  volumeTrend: TrendPoint[]
+  exercises: ExerciseMetric[]
+  effort: { hasData: boolean; avgRir: number | null; avgRpe: number | null }
+}
+
+/**
+ * The AI post-workout summary. `status` is 'ready' when the model produced it
+ * and 'unavailable' when the model could not be reached — in which case the
+ * metrics are still real (computed server-side) and the text is a friendly
+ * fallback the user can retry.
+ */
+export type WorkoutAiSummary = {
+  status: 'ready' | 'unavailable'
+  generatedAt: string | null
+  assessment: WorkoutAssessment
+  headline: string
+  summary: string
+  improvements: string[]
+  declines: string[]
+  exerciseNotes: string[]
+  trendNote: string
+  effortNote: string | null
+  recommendation: string
+  metrics: WorkoutSummaryMetrics
+}
+
 /**
  * A server state together with the moment it arrived. The screen ticks its
  * timers forward from `receivedAt` rather than tracking elapsed time itself, so
@@ -358,6 +420,78 @@ export function useWorkout(id: string | undefined): {
   }, [id])
 
   return { state, replace }
+}
+
+const SUMMARY_ERROR = 'Could not load the workout summary.'
+
+/**
+ * The AI post-workout summary for a finished workout. Fetched once the workout
+ * completes; the server generates it in the background at completion and this
+ * endpoint returns the cached copy (or generates it on demand if the background
+ * job has not landed yet). Reloading the summary screen re-fetches the same
+ * cached summary rather than paying for a new generation.
+ */
+export function useWorkoutSummary(workoutId: number | null): {
+  state: Loadable<WorkoutAiSummary>
+  regenerate: () => Promise<void>
+} {
+  const [state, setState] = useState<Loadable<WorkoutAiSummary>>({
+    status: 'loading',
+  })
+
+  useEffect(() => {
+    if (workoutId === null) return
+    const controller = new AbortController()
+    setState({ status: 'loading' })
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/workout/${workoutId}/summary`, {
+          credentials: 'include',
+          signal: controller.signal,
+        })
+        if (!res.ok) {
+          setState({
+            status: 'error',
+            message: await errorMessage(res, SUMMARY_ERROR),
+          })
+          return
+        }
+        const data = (await res.json()) as { summary: WorkoutAiSummary }
+        setState({ status: 'ready', data: data.summary })
+      } catch (err) {
+        if (isAbort(err)) return
+        setState({ status: 'error', message: SUMMARY_ERROR })
+      }
+    })()
+
+    return () => controller.abort()
+  }, [workoutId])
+
+  /** Forces a fresh generation — the manual "try again" path. */
+  const regenerate = useCallback(async () => {
+    if (workoutId === null) return
+    setState({ status: 'loading' })
+    try {
+      const res = await fetch(
+        `/api/workout/${workoutId}/summary/regenerate`,
+        { method: 'POST', credentials: 'include' },
+      )
+      if (!res.ok) {
+        setState({
+          status: 'error',
+          message: await errorMessage(res, SUMMARY_ERROR),
+        })
+        return
+      }
+      const data = (await res.json()) as { summary: WorkoutAiSummary }
+      setState({ status: 'ready', data: data.summary })
+    } catch {
+      setState({ status: 'error', message: SUMMARY_ERROR })
+    }
+  }, [workoutId])
+
+  return { state, regenerate }
 }
 
 /**

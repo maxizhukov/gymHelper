@@ -24,6 +24,10 @@ import {
   validateStartWorkoutDto,
 } from './dto/workout.dto';
 import {
+  AiWorkoutSummaryService,
+  type WorkoutSummaryPayload,
+} from './ai-workout-summary.service';
+import {
   WorkoutService,
   type ExerciseHistory,
   type WorkoutState,
@@ -42,6 +46,7 @@ const ID_PATTERN = /^[1-9][0-9]{0,9}$/;
 export class WorkoutController {
   constructor(
     private readonly workoutService: WorkoutService,
+    private readonly aiSummaryService: AiWorkoutSummaryService,
     private readonly sessionService: SessionService,
   ) {}
 
@@ -114,6 +119,41 @@ export class WorkoutController {
       throw new NotFoundException('Workout not found.');
     }
     return { workout };
+  }
+
+  /**
+   * The AI post-workout summary for a finished workout: the cached one, or
+   * generated on demand if the background generation has not landed yet. Scoped
+   * to the owner. Declared before ':id' so this literal segment wins.
+   */
+  @Get(':id/summary')
+  async summary(
+    @Param('id') id: string,
+    @Req() req: Request,
+  ): Promise<{ summary: WorkoutSummaryPayload }> {
+    const user = await this.currentUser(req);
+    if (!ID_PATTERN.test(id)) {
+      throw new BadRequestException('Invalid workout id.');
+    }
+    return {
+      summary: await this.aiSummaryService.getSummary(user.id, Number(id)),
+    };
+  }
+
+  /** Regenerates the AI summary from scratch — the manual "try again" path. */
+  @Post(':id/summary/regenerate')
+  @HttpCode(200)
+  async regenerateSummary(
+    @Param('id') id: string,
+    @Req() req: Request,
+  ): Promise<{ summary: WorkoutSummaryPayload }> {
+    const user = await this.currentUser(req);
+    if (!ID_PATTERN.test(id)) {
+      throw new BadRequestException('Invalid workout id.');
+    }
+    return {
+      summary: await this.aiSummaryService.regenerate(user.id, Number(id)),
+    };
   }
 
   /** Starts a workout for a training day. 409 when one is already in progress. */

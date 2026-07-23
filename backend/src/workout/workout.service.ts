@@ -10,6 +10,7 @@ import type { PoolClient } from 'pg';
 import { bootstrapSchema } from '../database/bootstrap-schema';
 import { DatabaseService } from '../database/database.service';
 import { TrainingConfigService } from '../training/training-config.service';
+import { AiWorkoutSummaryService } from './ai-workout-summary.service';
 
 /**
  * Workout tracking. The database is the single source of truth: every user
@@ -259,6 +260,7 @@ export class WorkoutService implements OnModuleInit {
   constructor(
     private readonly db: DatabaseService,
     private readonly trainingConfig: TrainingConfigService,
+    private readonly aiSummary: AiWorkoutSummaryService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -332,6 +334,20 @@ export class WorkoutService implements OnModuleInit {
          ADD COLUMN IF NOT EXISTS template_day_id INTEGER
            REFERENCES training_template_days(id) ON DELETE SET NULL`,
     );
+
+    // The AI post-workout summary, cached on the session it describes so a
+    // finished workout is summarised once rather than on every visit.
+    // `ai_summary_json` holds the model narrative plus the deterministic metrics
+    // it was built from; `ai_summary_text` is the plain-text summary for a quick
+    // read; `ai_summary_generated_at` doubles as the "already generated" flag.
+    // All nullable and added after the table shipped, so existing sessions read
+    // null and are summarised lazily on first view.
+    await this.db.query(`
+      ALTER TABLE workout_sessions
+        ADD COLUMN IF NOT EXISTS ai_summary_text TEXT,
+        ADD COLUMN IF NOT EXISTS ai_summary_json JSONB,
+        ADD COLUMN IF NOT EXISTS ai_summary_generated_at TIMESTAMPTZ
+    `);
 
     // The session's exercise queue, and the workout's exercise identities.
     //
@@ -1217,7 +1233,7 @@ export class WorkoutService implements OnModuleInit {
     reps: number,
     details: SetDetails = { rir: null, rpe: null, isWarmup: false },
   ): Promise<WorkoutState> {
-    return this.db.transaction(async (client) => {
+    const { state, completedSessionId } = await this.db.transaction(async (client) => {
       const session = await this.lockActiveSession(client, userId);
       const run = this.runner(client);
 
@@ -1309,10 +1325,13 @@ export class WorkoutService implements OnModuleInit {
           exerciseId,
           session.set_number,
         );
-        return this.buildState(
-          this.mergeSession(session, updated.rows[0]),
-          client,
-        );
+        return {
+          state: await this.buildState(
+            this.mergeSession(session, updated.rows[0]),
+            client,
+          ),
+          completedSessionId: session.id,
+        };
       }
 
       const updated = await client.query<SessionRow>(
@@ -1330,11 +1349,24 @@ export class WorkoutService implements OnModuleInit {
         exerciseId,
         session.set_number,
       );
-      return this.buildState(
-        this.mergeSession(session, updated.rows[0]),
-        client,
-      );
+      return {
+        state: await this.buildState(
+          this.mergeSession(session, updated.rows[0]),
+          client,
+        ),
+        completedSessionId: null as number | null,
+      };
     });
+
+    // The workout just finished: generate its AI summary in the background so it
+    // is usually ready by the time the user reaches the summary screen. Deliberately
+    // not awaited and it never throws — a failed summary must not turn a
+    // successfully completed workout into an error.
+    if (completedSessionId !== null) {
+      void this.aiSummary.generateInBackground(userId, completedSessionId);
+    }
+
+    return state;
   }
 
   /**

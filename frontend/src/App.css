@@ -775,6 +775,288 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── AI post-workout summary ───────────────────────────────────────────────── */
+.ai-summary {
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 1.4rem 1.25rem;
+  background: var(--card);
+  margin: 0 0 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.ai-summary-kicker {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--lime-tint-text);
+}
+
+.ai-badge {
+  align-self: flex-start;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--border-2);
+}
+
+.ai-badge-better {
+  background: var(--lime);
+}
+
+.ai-badge-worse {
+  background: #f6c9c0;
+}
+
+.ai-badge-first {
+  background: var(--lime-tint);
+  color: var(--lime-tint-text);
+}
+
+.ai-summary-headline {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: var(--ink);
+}
+
+.ai-summary-text,
+.ai-summary-text-list {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  font-size: 0.95rem;
+}
+
+.ai-summary-text-list {
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ai-summary-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted-2);
+  font-style: italic;
+}
+
+/* Volume comparison: three cells side by side. */
+.ai-volume {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.ai-volume-cell {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.7rem 0.6rem;
+  background: var(--screen);
+}
+
+.ai-volume-cell .label {
+  margin: 0 0 0.3rem;
+  font-size: 0.68rem;
+}
+
+.ai-volume-value {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.98rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+/* Volume trend bar chart. */
+.ai-trend .label,
+.ai-exercises .label,
+.ai-chips .label {
+  margin: 0 0 0.5rem;
+}
+
+.ai-trend-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  height: 130px;
+}
+
+.ai-trend-bar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  gap: 0.25rem;
+}
+
+.ai-trend-amount {
+  font-size: 0.62rem;
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-trend-fill {
+  width: 100%;
+  max-width: 34px;
+  border-radius: 8px 8px 4px 4px;
+  background: var(--border-2);
+  min-height: 4px;
+}
+
+.ai-trend-fill-current {
+  background: var(--lime);
+}
+
+.ai-trend-date {
+  font-size: 0.62rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Per-exercise table. */
+.ai-exercise-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.ai-exercise-table th {
+  text-align: right;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  font-weight: 700;
+  padding: 0 0 0.4rem;
+}
+
+.ai-exercise-table th:first-child {
+  text-align: left;
+}
+
+.ai-exercise-table td {
+  text-align: right;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
+.ai-exercise-name {
+  text-align: left !important;
+  color: var(--ink) !important;
+  font-weight: 600;
+}
+
+.ai-delta-up {
+  color: var(--lime-deep);
+  font-weight: 700;
+}
+
+.ai-delta-down {
+  color: #c0503c;
+  font-weight: 700;
+}
+
+.ai-delta-flat {
+  color: var(--muted);
+}
+
+/* Improved / watch chips. */
+.ai-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.ai-chip {
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.ai-chip-up {
+  background: var(--lime-tint);
+  color: var(--lime-tint-text);
+}
+
+.ai-chip-down {
+  background: #f6ded9;
+  color: #9c4635;
+}
+
+.ai-summary-notes {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.ai-summary-trend-note,
+.ai-summary-effort-note {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted-2);
+  line-height: 1.45;
+}
+
+.ai-recommendation {
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  border-radius: 14px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 0.92rem;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.ai-recommendation-label {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  color: var(--lime);
+}
+
+.ai-summary-regenerate {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted-2);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ai-summary-regenerate:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* ── Finish-set dialog: a bottom sheet on a phone ──────────────────────────── */
 .dialog-backdrop {
   position: fixed;

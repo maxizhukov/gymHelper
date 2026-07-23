@@ -2,7 +2,18 @@ import type { ConfigService } from '@nestjs/config';
 import { Client } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import { TrainingConfigService } from '../training/training-config.service';
+import { AiWorkoutSummaryService } from './ai-workout-summary.service';
 import { WorkoutService } from './workout.service';
+
+/**
+ * A summary service with no OpenAI key configured, so the background generation
+ * fired on workout completion resolves to its safe fallback without any network
+ * call. These tests are about the workout schema, not the summary.
+ */
+function summaryService(db: DatabaseService): AiWorkoutSummaryService {
+  const noKeyConfig = { get: () => undefined } as unknown as ConfigService;
+  return new AiWorkoutSummaryService(db, noKeyConfig);
+}
 
 /**
  * These run against a real Postgres, not a fake: the service leans on
@@ -204,7 +215,7 @@ describeDb('WorkoutService — exercise identity outlives queue position', () =>
 
     const trainingConfig = new TrainingConfigService(db);
     await trainingConfig.onModuleInit();
-    service = new WorkoutService(db, trainingConfig);
+    service = new WorkoutService(db, trainingConfig, summaryService(db));
     // Twice, because every boot runs it: the second must be a no-op on a
     // database that was created fresh by the first.
     await service.ensureSchema();
@@ -608,7 +619,7 @@ describeDb('WorkoutService — exercise identity outlives queue position', () =>
     // memory: the queue has to come back off the database exactly as it was.
     const restartedDb = connect('gymhelper_test_identity');
     const restartedConfig = new TrainingConfigService(restartedDb);
-    const restarted = new WorkoutService(restartedDb, restartedConfig);
+    const restarted = new WorkoutService(restartedDb, restartedConfig, summaryService(restartedDb));
     await restarted.ensureSchema();
     try {
       const resumed = await restarted.getActiveWorkout(userId);
@@ -901,7 +912,7 @@ describeDb('WorkoutService — migrating a position-keyed database', () => {
 
     const trainingConfig = new TrainingConfigService(db);
     await trainingConfig.onModuleInit();
-    service = new WorkoutService(db, trainingConfig);
+    service = new WorkoutService(db, trainingConfig, summaryService(db));
 
     // The migration under test.
     await service.ensureSchema();
@@ -1084,7 +1095,7 @@ describeDb('WorkoutService — exercise history', () => {
 
     const trainingConfig = new TrainingConfigService(db);
     await trainingConfig.onModuleInit();
-    service = new WorkoutService(db, trainingConfig);
+    service = new WorkoutService(db, trainingConfig, summaryService(db));
     await service.ensureSchema();
   });
 
