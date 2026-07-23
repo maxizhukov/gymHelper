@@ -1057,6 +1057,144 @@
   cursor: default;
 }
 
+/* ── AI general-progress summary (Progress page) ───────────────────────────── */
+.progress-period {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.progress-period-tab {
+  flex: 1 1 auto;
+  min-width: fit-content;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.progress-period-tab.is-active {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: var(--ink);
+}
+
+.progress-stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+}
+
+.progress-stat {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.55rem 0.35rem;
+  text-align: center;
+  background: var(--card);
+}
+
+.progress-stat .label {
+  margin: 0 0 0.2rem;
+}
+
+.progress-stat-value {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ai-muscle-list {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ai-muscle-row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.ai-muscle-name {
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-muscle-track {
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--border-2);
+  overflow: hidden;
+}
+
+.ai-muscle-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--lime);
+}
+
+.ai-muscle-value {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.progress-charts {
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+
+.progress-charts-summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted-2);
+  list-style: none;
+}
+
+.progress-charts-summary::-webkit-details-marker {
+  display: none;
+}
+
+.progress-charts-summary::before {
+  content: '▸ ';
+}
+
+.progress-charts[open] .progress-charts-summary::before {
+  content: '▾ ';
+}
+
+.progress-charts-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 0.85rem;
+}
+
+.ai-summary-subhead {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-2);
+  list-style: none;
+  padding: 0 0 0.2rem;
+}
+
 /* ── Finish-set dialog: a bottom sheet on a phone ──────────────────────────── */
 .dialog-backdrop {
   position: fixed;

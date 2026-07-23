@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { errorMessage, isAbort, type Loadable } from './api'
 
 /**
@@ -125,4 +125,152 @@ export function trendOf(change: number): 'up' | 'down' | 'flat' {
   if (rounded > 0) return 'up'
   if (rounded < 0) return 'down'
   return 'flat'
+}
+
+/**
+ * The AI general-progress summary. This analyses overall training across ALL
+ * workouts in the selected window — unlike the post-workout summary, which
+ * compares one finished session to earlier sessions of the same training day.
+ */
+
+export type ProgressPeriod = 'week' | 'month' | 'three_months' | 'all_time'
+
+export type ProgressAssessment =
+  | 'improving'
+  | 'stable'
+  | 'declining'
+  | 'not_enough_data'
+
+export type ProgressBestSet = {
+  name: string
+  weight: number
+  reps: number
+  e1rm: number
+}
+
+export type ExerciseProgress = {
+  name: string
+  volume: number
+  sets: number
+  reps: number
+  bestE1rm: number
+  sessions: number
+  e1rmChange: number
+}
+
+export type MuscleGroupVolume = { name: string; volume: number; sets: number }
+
+export type TrendBucket = { label: string; volume: number; workouts: number }
+
+export type WorkoutVolume = { date: string; dayName: string; volume: number }
+
+export type WindowTotals = { workouts: number; volume: number; reps: number }
+
+/** The deterministic numbers behind the summary — the data the UI charts. */
+export type ProgressMetrics = {
+  period: ProgressPeriod
+  periodLabel: string
+  workouts: number
+  totalVolume: number
+  totalSets: number
+  totalReps: number
+  averageWorkoutsPerWeek: number
+  daysTrained: { name: string; workouts: number }[]
+  volumeTrend: TrendBucket[]
+  volumeByWorkout: WorkoutVolume[]
+  topExercises: ExerciseProgress[]
+  muscleGroups: MuscleGroupVolume[]
+  bestSets: ProgressBestSet[]
+  previous: WindowTotals | null
+}
+
+export type ProgressSummary = {
+  period: ProgressPeriod
+  status: 'ready' | 'unavailable'
+  generatedAt: string | null
+  assessment: ProgressAssessment
+  headline: string
+  summary: string
+  consistencyNote: string
+  highlights: string[]
+  weakSpots: string[]
+  comparisonNote: string
+  recommendations: string[]
+  metrics: ProgressMetrics
+}
+
+export const PROGRESS_PERIODS: { value: ProgressPeriod; label: string }[] = [
+  { value: 'week', label: 'Last week' },
+  { value: 'month', label: 'Last month' },
+  { value: 'three_months', label: 'Last 3 months' },
+  { value: 'all_time', label: 'All time' },
+]
+
+const SUMMARY_ERROR = 'Could not generate AI summary. Your workout data is still saved.'
+
+/**
+ * The AI progress summary for a period, re-fetched whenever the period changes.
+ * The server caches the narrative and only re-generates it when new training has
+ * changed the numbers, so switching between periods is cheap.
+ */
+export function useProgressSummary(period: ProgressPeriod): {
+  state: Loadable<ProgressSummary>
+  regenerate: () => Promise<void>
+} {
+  const [state, setState] = useState<Loadable<ProgressSummary>>({
+    status: 'loading',
+  })
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setState({ status: 'loading' })
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/stats/ai-summary?period=${period}`, {
+          credentials: 'include',
+          signal: controller.signal,
+        })
+        if (!res.ok) {
+          setState({
+            status: 'error',
+            message: await errorMessage(res, SUMMARY_ERROR),
+          })
+          return
+        }
+        const data = (await res.json()) as { summary: ProgressSummary }
+        setState({ status: 'ready', data: data.summary })
+      } catch (err) {
+        if (isAbort(err)) return
+        setState({ status: 'error', message: SUMMARY_ERROR })
+      }
+    })()
+
+    return () => controller.abort()
+  }, [period])
+
+  const regenerate = useCallback(async () => {
+    setState({ status: 'loading' })
+    try {
+      const res = await fetch('/api/stats/ai-summary/regenerate', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period }),
+      })
+      if (!res.ok) {
+        setState({
+          status: 'error',
+          message: await errorMessage(res, SUMMARY_ERROR),
+        })
+        return
+      }
+      const data = (await res.json()) as { summary: ProgressSummary }
+      setState({ status: 'ready', data: data.summary })
+    } catch {
+      setState({ status: 'error', message: SUMMARY_ERROR })
+    }
+  }, [period])
+
+  return { state, regenerate }
 }
