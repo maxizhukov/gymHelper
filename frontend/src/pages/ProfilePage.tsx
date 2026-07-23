@@ -5,14 +5,19 @@ import { Form } from '@base-ui/react/form'
 import { Input } from '@base-ui/react/input'
 import { NumberField } from '@base-ui/react/number-field'
 import { Separator } from '@base-ui/react/separator'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { saveTrainingConfig, useTrainingConfig } from '../training-config'
+import BackHeader from '../components/BackHeader'
 
 type ChangePwState = 'idle' | 'submitting' | 'success' | 'error'
 type ConfigState = 'idle' | 'submitting' | 'success' | 'error'
 
-export default function ProfilePage() {
+/**
+ * Profile settings body, without any screen chrome, so it can sit as the
+ * Profile tab inside the app shell and as a standalone routed screen.
+ */
+export function ProfileContent() {
   const { user, logout } = useAuth()
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -113,13 +118,11 @@ export default function ProfilePage() {
   }
 
   return (
-    <main className="app">
-      {/* Navigation, so a real link — Base UI's Button would impose button semantics. */}
-      <Link className="back-link" to="/">
-        Back
-      </Link>
-      <h1>Profile settings</h1>
-      <p className="subtitle">Signed in as {user.username}</p>
+    <div className="dash">
+      <div className="page-head">
+        <h1 className="page-title">Profile</h1>
+        <p className="page-sub">Signed in as {user.username}</p>
+      </div>
 
       {config.status === 'loading' && (
         <div className="card">
@@ -304,6 +307,23 @@ export default function ProfilePage() {
       <Button type="button" className="logout-button" onClick={logout}>
         Log out
       </Button>
-    </main>
+
+      <p className="auth-version" style={{ textAlign: 'center' }}>
+        v{__APP_VERSION__}
+      </p>
+    </div>
+  )
+}
+
+/** Standalone routed Profile screen (`/profile`), with a back header to Home. */
+export default function ProfilePage() {
+  const navigate = useNavigate()
+  return (
+    <div className="screen">
+      <BackHeader title="Profile" onBack={() => void navigate('/')} />
+      <div className="screen-scroll has-header">
+        <ProfileContent />
+      </div>
+    </div>
   )
 }

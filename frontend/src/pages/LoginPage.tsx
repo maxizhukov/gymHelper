@@ -28,11 +28,11 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="app">
-      <h1>GymHelper</h1>
-      <p className="subtitle">Sign in to your account</p>
+    <main className="auth-screen">
+      <div className="auth-logo">GymHelper</div>
+      <p className="auth-tagline">Sign in to your account</p>
 
-      <Form className="card login-form" onFormSubmit={handleSubmit}>
+      <Form className="auth-card login-form" onFormSubmit={handleSubmit}>
         <Field.Root name="username" className="field">
           <Field.Label>Username</Field.Label>
           <Input
@@ -67,10 +67,12 @@ export default function LoginPage() {
           </p>
         )}
 
-        <Button type="submit" disabled={state === 'submitting'}>
+        <Button type="submit" className="btn-primary" disabled={state === 'submitting'}>
           {state === 'submitting' ? 'Signing in…' : 'Sign in'}
         </Button>
       </Form>
+
+      <p className="auth-version">v{__APP_VERSION__}</p>
     </main>
   )
 }

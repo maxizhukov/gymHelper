@@ -14,12 +14,13 @@ import ProfilePage from './pages/ProfilePage'
 import TrainingDayPage from './pages/TrainingDayPage'
 import WorkoutPage from './pages/WorkoutPage'
 import './App.css'
+import './design-system.css'
 
 function Loading() {
   return (
-    <main className="app">
-      <h1>GymHelper</h1>
-      <p className="subtitle">Loading…</p>
+    <main className="auth-screen">
+      <div className="auth-logo">GymHelper</div>
+      <p className="auth-tagline">Loading…</p>
     </main>
   )
 }
@@ -52,19 +53,6 @@ function RequireAnonymous() {
   return <Outlet />
 }
 
-/**
- * The build the browser is actually running, baked in at build time. Shown on
- * every screen so a deploy can be confirmed from the phone in your hand: if the
- * number has not changed, the browser is still serving a cached bundle.
- */
-function AppVersion() {
-  return (
-    <footer className="app-version">
-      <p>v{__APP_VERSION__}</p>
-    </footer>
-  )
-}
-
 function App() {
   return (
     <AuthProvider>
@@ -84,8 +72,6 @@ function App() {
         {/* Unknown URL: fall back to the home route, which itself gates on auth. */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-
-      <AppVersion />
     </AuthProvider>
   )
 }

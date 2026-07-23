@@ -1,0 +1,917 @@
+/* ============================================================================
+   Nocturne — GymHelper design-system layer
+   ----------------------------------------------------------------------------
+   Real screen layouts recreated from the Claude Design "GymHelper Screens"
+   project (not just a palette): a full-height mobile shell with a liquid-glass
+   bottom tab bar on section roots, a back header on pushed views, a dashboard
+   Home, and the workout / preview compositions from the designed screens.
+
+   Loaded AFTER index.css (tokens) and App.css (legacy component styles) so it
+   owns the new layout primitives and, where needed, refines the older classes
+   to the designed hierarchy. Tokens come from index.css; nothing here hardcodes
+   a colour that already has a variable.
+   ============================================================================ */
+
+/* ── Liquid-glass material helpers ─────────────────────────────────────────
+   Layered translucent surface + blur + hairline border + inner top highlight +
+   depth shadow. This is the real Apple-style material the flat design faked. */
+.glass {
+  background: var(--glass-fill);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  box-shadow: var(--glass-highlight);
+}
+
+.overline {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── App shell: a phone-width column that fills the viewport ────────────────
+   The content region scrolls; the tab bar stays pinned to the bottom edge. */
+.screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 460px;
+  height: 100dvh;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+.screen-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: calc(env(safe-area-inset-top) + 0.75rem) 1.25rem 1.5rem;
+}
+
+/* Pushed views want a little breathing room under the back header. */
+.screen-scroll.has-header {
+  padding-top: 0.25rem;
+}
+
+/* When the tab bar is present, keep the last cards clear of it. */
+.screen-scroll.with-tabbar {
+  padding-bottom: 1rem;
+}
+
+/* On a wide viewport the shell becomes a floating device, like the mockups. */
+@media (min-width: 620px) {
+  .screen {
+    height: min(920px, calc(100dvh - 3rem));
+    margin: 1.5rem auto;
+    border-radius: 44px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 40px 90px -22px rgba(0, 0, 0, 0.85);
+  }
+}
+
+/* ── Bottom tab bar ────────────────────────────────────────────────────────*/
+.tabbar {
+  flex: none;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0 0.75rem;
+  padding: 0.7rem 0.5rem calc(0.7rem + env(safe-area-inset-bottom));
+  background: rgba(20, 18, 34, 0.7);
+  backdrop-filter: blur(26px) saturate(160%);
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 28px 28px 0 0;
+  box-shadow: 0 -12px 30px -18px rgba(0, 0, 0, 0.7);
+}
+
+.tabbar-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1;
+  padding: 0.1rem;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.63rem;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.tabbar-item.is-active {
+  opacity: 1;
+  color: var(--indigo);
+  font-weight: 700;
+}
+
+/* ── Back header (pushed views) ────────────────────────────────────────────*/
+.back-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: calc(env(safe-area-inset-top) + 0.6rem) 1.25rem 0.6rem;
+}
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--border-2);
+  background: var(--glass-fill-2);
+  color: var(--ink);
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.back-btn:active {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.back-header-title {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+/* ── Shared buttons ────────────────────────────────────────────────────────*/
+.btn-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.95rem;
+  border: none;
+  border-radius: 16px;
+  background: var(--grad-primary);
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-primary);
+  transition: filter 0.15s ease;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.08);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+  filter: none;
+}
+
+.btn-glass {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.85rem;
+  border: 1px solid var(--border-2);
+  border-radius: 16px;
+  background: var(--glass-fill);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-glass:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.btn-glass:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ============================================================================
+   HOME — dashboard
+   ==========================================================================*/
+.dash {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  text-align: left;
+}
+
+.dash-greet {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.dash-date {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.dash-hello {
+  margin: 0.15rem 0 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.6rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.dash-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--glass-fill-2);
+  border: 1px solid var(--border-2);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+/* Today's nutrition summary card */
+.nutri-card {
+  border-radius: 24px;
+  padding: 1.05rem 1.1rem;
+  background: var(--glass-fill);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: var(--glass-highlight);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  display: block;
+}
+
+.nutri-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.nutri-kcal {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--ink);
+}
+
+.nutri-kcal span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.nutri-bar {
+  height: 7px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  margin-top: 0.7rem;
+  overflow: hidden;
+}
+
+.nutri-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--grad-accent-bar);
+}
+
+.nutri-macros {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.macro-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.macro-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.macro-dot.protein {
+  background: var(--indigo);
+}
+.macro-dot.carbs {
+  background: var(--cyan);
+}
+.macro-dot.fat {
+  background: var(--amber);
+}
+
+.macro-label {
+  font-size: 0.68rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.macro-val {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--ink);
+  margin-top: 0.2rem;
+}
+
+.macro-val span {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+/* Selected-workout hero */
+.hero-card {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  border-radius: 22px;
+  padding: 0.9rem 1rem;
+  background: linear-gradient(150deg, rgba(124, 92, 255, 0.9), rgba(92, 72, 220, 0.75));
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 14px 34px -14px rgba(124, 92, 255, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.hero-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.hero-eyebrow {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.hero-title {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: #fff;
+  margin-top: 0.2rem;
+  letter-spacing: -0.01em;
+}
+
+.hero-sub {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.82);
+  font-weight: 500;
+  margin-top: 0.1rem;
+}
+
+.hero-start {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: none;
+  border-radius: 14px;
+  padding: 0.7rem 1.1rem;
+  background: #fff;
+  color: #20143a;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.hero-start:hover {
+  filter: brightness(0.94);
+}
+
+.hero-card-empty {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hero-card-empty .hero-sub {
+  margin-top: 0.35rem;
+}
+
+/* Your split — day list */
+.split-list {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.split-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.8rem 0.9rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.split-row.is-active {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(124, 92, 255, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.split-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.split-row.is-active .split-dot {
+  background: var(--indigo);
+  box-shadow: 0 0 10px var(--indigo);
+}
+
+.split-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.split-name {
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.split-sub {
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-top: 0.1rem;
+}
+
+.split-count {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex: none;
+}
+
+/* Quick actions grid */
+.qa-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem;
+}
+
+.qa-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 0.95rem;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.qa-card:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.qa-icon {
+  margin-bottom: 0.35rem;
+}
+
+.qa-icon.indigo {
+  color: var(--indigo);
+}
+.qa-icon.cyan {
+  color: var(--cyan);
+}
+
+.qa-title {
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.qa-sub {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+/* A plain section eyebrow used across the dashboard and pushed views. */
+.section-eyebrow {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.6rem;
+}
+
+/* ============================================================================
+   Page title used at the top of section roots without a back header
+   (Food / Progress / Profile tabs, library, builder).
+   ==========================================================================*/
+.page-head {
+  margin: 0 0 0.9rem;
+}
+
+.page-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.5rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.page-sub {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: 0.15rem 0 0;
+}
+
+/* ============================================================================
+   WORKOUT PREVIEW — numbered exercise cards (redesigned)
+   ==========================================================================*/
+.workout-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  text-align: left;
+}
+
+.workout-preview-header {
+  margin-bottom: 0.2rem;
+}
+
+.workout-preview .home-eyebrow,
+.workout-preview-header .home-eyebrow {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--indigo);
+  margin: 0;
+}
+
+.workout-preview-plan {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: 1.35rem;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0.35rem 0 0;
+}
+
+.workout-preview-day {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 500;
+  margin: 0.1rem 0 0;
+}
+
+.workout-preview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.workout-preview-item {
+  padding: 0;
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--glass-fill);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.workout-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.7rem 0.75rem;
+}
+
+.workout-preview-number {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.35);
+  width: 14px;
+  flex: none;
+  text-align: center;
+}
+
+.workout-preview-thumb {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(135deg, #2a2550, #171426);
+}
+
+.workout-preview-thumb-empty {
+  display: block;
+}
+
+.workout-preview-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.workout-preview-name {
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.workout-preview-meta {
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-transform: capitalize;
+}
+
+.workout-preview-collapsible {
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  margin: 0 0.15rem;
+}
+
+.workout-preview-more {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.15rem;
+}
+
+.workout-preview-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.5rem;
+}
+
+.workout-preview-empty {
+  text-align: left;
+}
+
+.workout-preview-edit {
+  align-self: center;
+  background: none;
+  border: none;
+  color: var(--muted-2);
+  font-weight: 600;
+  font-size: 0.82rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0.25rem;
+}
+
+/* ============================================================================
+   ACTIVE WORKOUT SESSION — refine the existing .workout-* classes to the
+   designed composition (day overline + indigo timer, big title, glass cells,
+   weight stepper, gradient Finish button). Structure in WorkoutPage is kept.
+   ==========================================================================*/
+/* Legacy .app screens (active workout, day view) sit on the fixed body
+   gradient rather than a flat panel, matching the designed backgrounds. */
+.app {
+  background: transparent;
+}
+
+.app.workout {
+  max-width: 460px;
+  text-align: left;
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+}
+
+.workout .workout-header {
+  align-items: flex-start;
+}
+
+.workout-header .label {
+  max-width: 12rem;
+  line-height: 1.4;
+  letter-spacing: 0.1em;
+}
+
+.workout-elapsed .label {
+  color: var(--muted);
+}
+
+.workout-clock {
+  color: var(--indigo);
+  font-size: 1.4rem;
+}
+
+.workout-progress {
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+
+.workout-exercise {
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: 1.5rem;
+  letter-spacing: -0.02em;
+}
+
+.workout-stat {
+  background: var(--glass-fill);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--glass-highlight);
+}
+
+.workout-stat-value {
+  font-size: 1.6rem;
+}
+
+/* The weight ± stepper reads as three tall glass tiles. */
+.workout-weight .number-field-group {
+  gap: 0.6rem;
+  height: 56px;
+}
+
+.workout-weight .number-field-button {
+  width: 56px;
+  border-radius: 15px;
+  background: var(--glass-fill-2);
+  border: 1px solid var(--border-2);
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+}
+
+.workout-weight .number-field-group input {
+  border-radius: 15px;
+  background: var(--glass-fill);
+  border: 1px solid var(--border-2);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.4rem;
+}
+
+.workout-set .workout-action,
+.workout-rest .workout-action {
+  background: var(--grad-primary);
+  color: #fff;
+  border-radius: 16px;
+  box-shadow: var(--shadow-primary);
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.workout-discard {
+  color: var(--red);
+  font-weight: 600;
+  margin-top: 1.5rem;
+}
+
+/* ============================================================================
+   AUTH — centred logo over a glass card
+   ==========================================================================*/
+.auth-screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.auth-logo {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 2.1rem;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+.auth-tagline {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0.4rem 0 0;
+}
+
+.auth-card {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 2rem;
+  border-radius: 26px;
+  padding: 1.5rem;
+  background: var(--glass-fill);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow:
+    0 20px 50px -18px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  text-align: left;
+}
+
+.auth-version {
+  color: rgba(255, 255, 255, 0.22);
+  font-size: 0.72rem;
+  margin-top: 1.6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Primary submit buttons (login, save settings, change password) take the
+   indigo gradient. The compound selectors out-specify the legacy lime rules. */
+.login-form button[type='submit'],
+.settings-form button[type='submit'] {
+  background: var(--grad-primary);
+  color: #fff;
+  border-radius: 14px;
+  box-shadow: var(--shadow-primary);
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.login-form button[type='submit']:disabled,
+.settings-form button[type='submit']:disabled {
+  opacity: 0.6;
+}
+
+/* ============================================================================
+   Panels rendered inside the shell: normalise legacy section headings to the
+   design's overline, and give the old .app a transparent, left-aligned host so
+   the gradient body shows through instead of a flat solid panel.
+   ==========================================================================*/
+.screen-scroll .stats-section h3,
+.screen-scroll .exercise-group-heading,
+.screen-scroll .food-meal-heading,
+.screen-scroll .training-days h2 {
+  color: var(--muted);
+  letter-spacing: 0.14em;
+}

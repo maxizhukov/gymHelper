@@ -55,9 +55,13 @@ export default function WorkoutPreview({
   return (
     <section className="workout-preview" aria-label="Today’s workout preview">
       <header className="workout-preview-header">
-        <p className="home-eyebrow">Today’s workout</p>
-        <h2 className="workout-preview-plan">{templateName}</h2>
-        <p className="workout-preview-day">{day.name}</p>
+        <p className="home-eyebrow">
+          Today’s workout{templateName ? ` · ${templateName}` : ''}
+        </p>
+        <h2 className="workout-preview-plan">{day.name}</h2>
+        <p className="workout-preview-day">
+          {day.exercises.length} exercise{day.exercises.length === 1 ? '' : 's'}
+        </p>
       </header>
 
       {empty ? (
@@ -97,7 +101,7 @@ export default function WorkoutPreview({
         {!empty && (
           <button
             type="button"
-            className="workout-action"
+            className="btn-primary"
             disabled={starting}
             onClick={() => void handleStart()}
           >
@@ -106,7 +110,7 @@ export default function WorkoutPreview({
         )}
         <button
           type="button"
-          className="nav-button workout-preview-back"
+          className="btn-glass workout-preview-back"
           disabled={starting}
           onClick={onBack}
         >
