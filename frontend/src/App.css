@@ -2856,3 +2856,445 @@ code {
   opacity: 0.6;
   cursor: default;
 }
+
+/* ==================================================================== */
+/* LIQUID GLASS OVERLAY                                                  */
+/* Nocturne redesign. index.css remaps the semantic tokens to their dark */
+/* values so the rules above re-theme in place; this layer adds the real */
+/* Apple-style glass materials (backdrop blur + inset highlight + depth  */
+/* shadow), the indigo gradient actions, accent bars, and the handful of */
+/* surfaces that were dark-on-light and must be handled explicitly.      */
+/* Appended last so it wins on equal specificity.                        */
+/* ==================================================================== */
+
+/* ── Shell ─────────────────────────────────────────────────────────── */
+/* Transparent so the fixed screen gradient (body) shows through the      */
+/* frosted glass and gives it something to refract.                       */
+.app {
+  background: transparent;
+  color: var(--ink);
+}
+
+.app-version {
+  background: transparent;
+}
+
+.app h1 {
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  color: var(--muted);
+}
+
+/* On wide viewports the column becomes a glass "device" on the gradient. */
+@media (min-width: 640px) {
+  .app {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    box-shadow:
+      0 40px 90px -30px rgba(0, 0, 0, 0.85),
+      var(--glass-highlight);
+  }
+}
+
+/* ── Frosted glass surfaces ────────────────────────────────────────── */
+/* Cards, cells, rows, panels: translucent white fill, hairline border,   */
+/* real backdrop blur, top inset highlight and a soft depth shadow.       */
+.card,
+.workout-stat,
+.stat-cell,
+.stat-row,
+.history,
+.exercise-info,
+.ai-summary,
+.progress-stat,
+.food-entry-row,
+.food-macro-chip,
+.food-add-card,
+.food-entry-form,
+.food-assistant,
+.workout-details,
+.workout-summary-item,
+.builder-picker,
+.ai-volume-cell {
+  background: var(--glass-fill);
+  border: 1px solid var(--border);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow:
+    var(--shadow-card),
+    var(--glass-highlight);
+}
+
+/* Interactive glass surfaces get a gentle lift on hover (pointer devices). */
+@media (hover: hover) {
+  .card:hover,
+  .home-card:hover,
+  .home-plan-chip:hover,
+  .nav-button:hover,
+  .builder-template-card:hover {
+    background: var(--glass-fill-2);
+    border-color: rgba(255, 255, 255, 0.18);
+  }
+}
+
+/* ── Segmented tabs & moving indicator ─────────────────────────────── */
+.tab-list,
+.food-mode-toggle {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+}
+
+.tab-indicator {
+  background: rgba(139, 125, 255, 0.22);
+  border: 1px solid rgba(139, 125, 255, 0.5);
+  box-shadow: 0 6px 16px -8px rgba(124, 92, 255, 0.8);
+}
+
+.tab[data-selected] {
+  color: #fff;
+}
+
+.progress-period-tab {
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.progress-period-tab.is-active {
+  background: var(--grad-primary);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: var(--shadow-primary);
+}
+
+/* ── Primary / gradient actions ────────────────────────────────────── */
+.workout-action,
+.login-form button,
+.settings-form button[type='submit'],
+.dialog-popup button[type='submit'],
+.food-button-primary,
+.food-analyze-button {
+  background: var(--grad-primary);
+  color: #fff;
+  border: none;
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+  box-shadow: var(--shadow-primary);
+}
+
+.workout-action {
+  border-radius: var(--radius-lg);
+}
+
+@media (hover: hover) {
+  .workout-action:not(:disabled):hover,
+  .login-form button:not(:disabled):hover,
+  .settings-form button[type='submit']:not(:disabled):hover,
+  .food-button-primary:not(:disabled):hover {
+    filter: brightness(1.08);
+  }
+}
+
+/* Resume-workout is the single brightest action; give it extra presence. */
+.workout-resume {
+  box-shadow:
+    var(--shadow-primary),
+    var(--glass-highlight);
+}
+
+/* ── Secondary / glass buttons ─────────────────────────────────────── */
+.workout-secondary,
+.nav-button,
+.food-nav-arrow,
+.food-button-secondary,
+.number-field-button,
+.builder-icon,
+.home-plan-chip,
+.exercise-info-watch,
+.logout-button,
+.food-link-button.food-button-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-2);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  color: var(--ink);
+}
+
+.logout-button {
+  background: rgba(255, 107, 107, 0.08);
+  border-color: rgba(255, 107, 107, 0.35);
+  color: var(--danger-text);
+}
+
+/* ── Inputs ────────────────────────────────────────────────────────── */
+.field input,
+.food-input,
+.food-text-input,
+.builder-input,
+.food-assistant-textarea {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-2);
+  color: var(--ink);
+}
+
+.field input::placeholder,
+.food-input::placeholder,
+.food-text-input::placeholder,
+.builder-input::placeholder,
+.food-assistant-textarea::placeholder {
+  color: var(--muted);
+}
+
+.field input:focus,
+.food-input:focus,
+.food-text-input:focus,
+.builder-input:focus,
+.food-assistant-textarea:focus {
+  outline: none;
+  border-color: rgba(139, 125, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(139, 125, 255, 0.18);
+}
+
+/* ── Progress / macro / accent bars → indigo→cyan gradient ─────────── */
+.food-meter-fill[data-state='good'],
+.ai-muscle-fill,
+.ai-trend-fill-current {
+  background: var(--grad-accent-bar);
+}
+
+.food-meter-track,
+.ai-muscle-track {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.food-meter-fill[data-state='under'] {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.food-meter-fill[data-state='over'] {
+  background: var(--red);
+}
+
+.ai-trend-fill {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Selection / active states get an indigo ring + glow ───────────── */
+.status-ok,
+.builder-template-selected,
+.home-day-selected,
+.home-plan-chip-selected {
+  border-color: rgba(139, 125, 255, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(139, 125, 255, 0.35),
+    0 10px 30px -16px rgba(124, 92, 255, 0.7);
+}
+
+.home-plan-chip-selected {
+  background: rgba(139, 125, 255, 0.2);
+  color: #fff;
+}
+
+.status-error {
+  border-color: rgba(255, 107, 107, 0.6);
+}
+
+/* ── Dark-on-light surfaces that must be re-authored, not token-mapped ─ */
+/* (These used --ink as a *background*; with --ink now white they need a   */
+/* real dark/tinted glass fill so their white text stays readable.)        */
+.food-calorie-card {
+  background: linear-gradient(
+    150deg,
+    rgba(124, 92, 255, 0.9),
+    rgba(92, 72, 220, 0.72)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow:
+    0 18px 40px -18px rgba(124, 92, 255, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.food-calorie-title {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.food-calorie-goal,
+.food-calorie-remaining {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.food-calorie-card .food-meter-track {
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.food-calorie-card .food-meter-fill[data-state='good'] {
+  background: #fff;
+}
+
+.ai-recommendation,
+.workout-ai-recommendation {
+  background: rgba(139, 125, 255, 0.12);
+  border: 1px solid rgba(139, 125, 255, 0.32);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  color: var(--ink);
+}
+
+.ai-recommendation-label {
+  color: var(--indigo);
+}
+
+.workout-ai-recommendation::before {
+  color: var(--indigo);
+}
+
+.food-assistant-user {
+  background: var(--grad-primary);
+  color: #fff;
+}
+
+.food-assistant-assistant {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink);
+  border: 1px solid var(--border);
+}
+
+/* ── AI comparison chips / deltas / badges (dark-legible tints) ─────── */
+.ai-badge {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--ink);
+}
+
+.ai-badge-better {
+  background: rgba(75, 224, 168, 0.22);
+  color: var(--mint);
+}
+
+.ai-badge-worse {
+  background: rgba(255, 107, 107, 0.22);
+  color: var(--red);
+}
+
+.ai-badge-first {
+  background: var(--lime-tint);
+  color: var(--lime-tint-text);
+}
+
+.ai-delta-up,
+.ai-chip-up {
+  color: var(--mint);
+}
+
+.ai-chip-up {
+  background: rgba(75, 224, 168, 0.16);
+}
+
+.ai-delta-down {
+  color: var(--red);
+}
+
+.ai-chip-down {
+  background: rgba(255, 107, 107, 0.16);
+  color: var(--red);
+}
+
+.history-improvement,
+.success {
+  color: var(--mint);
+}
+
+/* ── Food: misc tints that were chartreuse/orange on light ─────────── */
+.food-toast {
+  background: rgba(139, 125, 255, 0.16);
+  border: 1px solid rgba(139, 125, 255, 0.45);
+  color: var(--ink);
+}
+
+.food-scan-button {
+  background: rgba(139, 125, 255, 0.12);
+  border: 1px dashed rgba(139, 125, 255, 0.55);
+  color: var(--ink);
+}
+
+.food-confidence[data-level='medium'] {
+  background: rgba(255, 178, 125, 0.16);
+  color: var(--amber);
+}
+
+.food-confidence[data-level='low'],
+.food-review-flag {
+  background: rgba(255, 107, 107, 0.16);
+  color: var(--danger-text);
+}
+
+/* ── Home hub cards: crisp glass tiles with an accent icon well ────── */
+.home-card {
+  border-radius: var(--radius-lg);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.15s ease;
+}
+
+.home-card-icon {
+  font-size: 1.4rem;
+}
+
+/* ── Bottom-sheet dialog: heavy frosted glass ──────────────────────── */
+.dialog-backdrop {
+  background: rgba(6, 5, 12, 0.55);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.dialog-popup {
+  background: rgba(20, 18, 32, 0.85);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(160%);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(160%);
+  box-shadow: 0 -30px 60px -20px rgba(0, 0, 0, 0.7);
+}
+
+/* ── Back / navigation affordances ─────────────────────────────────── */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+/* Builder danger / remove keep a red glass tint. */
+.builder-danger,
+.builder-icon-remove {
+  background: rgba(255, 107, 107, 0.08);
+  border-color: rgba(255, 107, 107, 0.4);
+  color: var(--danger-text);
+}
+
+/* Exercise / preview thumbnails: quiet dark wells behind real images. */
+.exercise-thumbnail,
+.builder-picker-thumb,
+.workout-preview-thumb {
+  background: linear-gradient(135deg, #2a2550, #171426);
+  border: 1px solid var(--border);
+}
+
+/* Code chips. */
+code {
+  background: rgba(255, 255, 255, 0.09);
+}
+

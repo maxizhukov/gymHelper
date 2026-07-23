@@ -1,43 +1,100 @@
-/* Fitness App design system (imported from Claude Design "Fitness Training and
-   Nutrition App"). Light canvas, ink + lime accent, Space Grotesk display type
-   over Instrument Sans body. All colours and type live here as tokens so the
-   whole app themes from one place. */
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&display=swap');
+/* GymHelper — "Nocturne" dark liquid-glass design system (imported from the
+   Claude Design "GymHelper Screens" project). Indigo-on-charcoal, frosted glass
+   surfaces, Space Grotesk for numerals/stats and Manrope for text (Cyrillic-
+   ready). Every colour, glass material, radius, shadow and type value lives here
+   as a token so the whole app themes from one place; App.css only consumes them.
+
+   The original light-theme token *names* are kept and remapped to their dark
+   equivalents, so the ~285 var() references across App.css re-theme in place. */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
 
 :root {
-  /* Type */
-  --font-body: 'Instrument Sans', system-ui, 'Segoe UI', Roboto, sans-serif;
-  --font-display: 'Space Grotesk', 'Instrument Sans', system-ui, sans-serif;
+  /* Type — Manrope body (Cyrillic-ready), Space Grotesk display/numerals */
+  --font-body: 'Manrope', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Space Grotesk', 'Manrope', system-ui, sans-serif;
 
-  /* Palette */
-  --canvas: #e7e7e1; /* page behind the phone-width column */
-  --screen: #fafaf8; /* the app surface itself */
-  --ink: #17181b; /* near-black text and dark cards */
-  --ink-soft: #26272b; /* raised chips on dark cards */
-  --lime: #cbf74a; /* accent */
-  --lime-deep: #6b7a2e; /* lime that needs contrast on light */
-  --lime-tint: #dde7c4; /* lime wash for avatars / badges */
-  --lime-tint-text: #5c6b2e;
-  --muted: #9a9c98; /* secondary labels */
-  --muted-2: #6c6e68; /* body-weight secondary text */
-  --card: #ffffff;
-  --surface-2: #efefe9; /* inputs, search, quiet chips */
-  --surface-3: #f1f1ea; /* set cells, icon tiles */
-  --border: #edede7;
-  --border-2: #e6e6df;
-  --danger: #c2410c;
-  --danger-text: #b23a12;
+  /* ── Brand palette ──────────────────────────────────────────────── */
+  --indigo: #8b7dff; /* primary accent */
+  --indigo-strong: #6c4ff0; /* gradient end / pressed */
+  --cyan: #3ad0ff; /* info / secondary accent */
+  --mint: #4be0a8; /* positive */
+  --amber: #ffb27d; /* fat / warn */
+  --red: #ff6b6b; /* danger */
 
-  color-scheme: light;
+  /* ── Semantic tokens (original names, dark-remapped) ────────────── */
+  --canvas: #08070f; /* deepest page background */
+  --screen: #14121f; /* solid elevated dark surface (sheets, cells) */
+  --ink: #ffffff; /* primary text (a few dark-card cases are overridden) */
+  --ink-soft: rgba(255, 255, 255, 0.74); /* secondary text on glass */
+  --lime: #8b7dff; /* → accent: primary action / selection */
+  --lime-deep: #a99cff; /* accent text/links readable on dark */
+  --lime-tint: rgba(139, 125, 255, 0.16); /* accent badge wash */
+  --lime-tint-text: #b9afff;
+  --muted: rgba(255, 255, 255, 0.5); /* secondary labels */
+  --muted-2: rgba(255, 255, 255, 0.62); /* stronger secondary */
+  --card: rgba(255, 255, 255, 0.05); /* glass surface fill */
+  --surface-2: rgba(255, 255, 255, 0.05); /* inputs, quiet chips */
+  --surface-3: rgba(255, 255, 255, 0.09); /* meter/track fills */
+  --surface-muted: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.1); /* hairline glass border */
+  --border-2: rgba(255, 255, 255, 0.14); /* stronger hairline */
+  --danger: #ff6b6b;
+  --danger-text: #ff9a9a;
+
+  /* ── Liquid-glass materials ─────────────────────────────────────── */
+  --glass-blur: 20px;
+  --glass-blur-strong: 30px;
+  --glass-fill: rgba(255, 255, 255, 0.05);
+  --glass-fill-2: rgba(255, 255, 255, 0.08);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.15);
+
+  /* Gradients */
+  --grad-primary: linear-gradient(135deg, #8b7dff, #6c4ff0);
+  --grad-accent-bar: linear-gradient(90deg, #7c5cff, #3ad0ff);
+  --grad-screen: radial-gradient(
+    120% 80% at 15% -5%,
+    #241d47 0%,
+    #100e1c 45%,
+    #08070f 100%
+  );
+
+  /* Radii */
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 28px;
+
+  /* Shadows */
+  --shadow-card: 0 20px 50px -24px rgba(0, 0, 0, 0.7);
+  --shadow-primary: 0 14px 30px -12px rgba(124, 92, 255, 0.9);
+
+  color-scheme: dark;
   font-family: var(--font-body);
   line-height: 1.5;
   color: var(--ink);
   background-color: var(--canvas);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body {
   margin: 0;
   min-height: 100svh;
-  background: var(--canvas);
+  color: var(--ink);
+  /* The rich, fixed gradient the frosted glass surfaces refract against. */
+  background: var(--grad-screen) fixed, var(--canvas);
+  background-attachment: fixed;
+}
+
+/* Native form controls adopt the dark scheme (date pickers, spinners, etc.). */
+input,
+textarea,
+select,
+button {
+  color-scheme: dark;
+}
+
+::selection {
+  background: rgba(139, 125, 255, 0.35);
+  color: #fff;
 }
