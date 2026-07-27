@@ -9,6 +9,7 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { useExerciseDetail } from '../exercise-library'
 import { ExerciseInfoDetail, hasExerciseInfo } from './ExerciseInfo'
+import { ExerciseHistoryModal } from './ExerciseHistory'
 import {
   BODY_WEIGHT_MAX,
   BODY_WEIGHT_MIN,
@@ -948,6 +949,12 @@ function WorkoutSummary({ workout }: { workout: WorkoutState }) {
           training day — text plus the numbers it was drawn from. */}
       <WorkoutAiSummaryPanel workoutId={workout.id} />
 
+      {/* Each exercise of this workout, opening its full history across every
+          workout — the same standalone view the Library and Builder reach. */}
+      {workout.exercises.length > 0 && (
+        <WorkoutExerciseHistoryList exercises={workout.exercises} />
+      )}
+
       <Form className="settings-form" onFormSubmit={handleSave}>
         <Field.Root name="bodyWeight" className="field">
           <Field.Label>What is your current body weight? (kg)</Field.Label>
@@ -994,6 +1001,50 @@ function WorkoutSummary({ workout }: { workout: WorkoutState }) {
         {workout.bodyWeightKg === null ? 'Skip' : 'Done'}
       </Link>
     </main>
+  )
+}
+
+/**
+ * The exercises of a finished workout, each opening its full history. One modal
+ * is mounted for the whole list and pointed at whichever exercise was tapped, so
+ * a long workout does not mount a sheet per row. A legacy exercise carries no
+ * library id and resolves its history by name instead.
+ */
+function WorkoutExerciseHistoryList({
+  exercises,
+}: {
+  exercises: WorkoutState['exercises']
+}) {
+  const [open, setOpen] = useState<WorkoutState['exercises'][number] | null>(
+    null,
+  )
+
+  return (
+    <section className="workout-history-section" aria-label="Exercise history">
+      <p className="ai-summary-kicker">Exercise history</p>
+      <ul className="workout-history-list">
+        {exercises.map((exercise) => (
+          <li key={exercise.position} className="workout-history-row">
+            <span className="workout-history-name">{exercise.name}</span>
+            <button
+              type="button"
+              className="nav-button workout-history-open"
+              onClick={() => setOpen(exercise)}
+            >
+              History
+            </button>
+          </li>
+        ))}
+      </ul>
+      <ExerciseHistoryModal
+        open={open !== null}
+        onOpenChange={(next) => {
+          if (!next) setOpen(null)
+        }}
+        exerciseName={open?.name ?? ''}
+        exerciseLibraryId={open?.exerciseLibraryId ?? null}
+      />
+    </section>
   )
 }
 

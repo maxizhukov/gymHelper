@@ -15,6 +15,7 @@ import {
   type TemplateDay,
   type TemplateDayExercise,
 } from '../training-builder'
+import { ExerciseHistoryModal } from './ExerciseHistory'
 import WorkoutPreview from './WorkoutPreview'
 
 /**
@@ -565,10 +566,22 @@ function ExerciseRow({
   onDown: () => void
   onRemove: () => void
 }) {
+  const [historyOpen, setHistoryOpen] = useState(false)
+
   return (
     <li className="builder-exercise-row">
       <span className="builder-exercise-name">{exercise.name}</span>
       <span className="builder-exercise-actions">
+        {/* History follows the movement by its library id, so it opens the same
+            view wherever the exercise appears. Every builder row carries one. */}
+        <button
+          type="button"
+          className="builder-icon builder-icon-history"
+          aria-label={`History for ${exercise.name}`}
+          onClick={() => setHistoryOpen(true)}
+        >
+          📊
+        </button>
         <button
           type="button"
           className="builder-icon"
@@ -596,6 +609,12 @@ function ExerciseRow({
           ✕
         </button>
       </span>
+      <ExerciseHistoryModal
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        exerciseName={exercise.name}
+        exerciseLibraryId={exercise.exerciseLibraryId}
+      />
     </li>
   )
 }

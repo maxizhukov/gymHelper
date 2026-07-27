@@ -30,6 +30,7 @@ import {
 import {
   WorkoutService,
   type ExerciseHistory,
+  type FullExerciseHistory,
   type WorkoutState,
 } from './workout.service';
 
@@ -79,6 +80,25 @@ export class WorkoutController {
   }
 
   /**
+   * The full history of one exercise, resolved by name — the standalone history
+   * view's fallback for a legacy-plan exercise that carries no library id.
+   * Declared before ':id' so this literal two-segment path is not swallowed.
+   */
+  @Get('history/full')
+  async fullHistoryByName(
+    @Query('name') name: unknown,
+    @Req() req: Request,
+  ): Promise<{ history: FullExerciseHistory }> {
+    const user = await this.currentUser(req);
+    const exerciseName = validateExerciseNameQuery(name);
+    return {
+      history: await this.workoutService.getFullExerciseHistory(user.id, {
+        name: exerciseName,
+      }),
+    };
+  }
+
+  /**
    * The same panel resolved by the library id the Training Builder assigns, so
    * history follows a movement even when it is removed from a day and added
    * back. Declared before ':id' so the literal path wins.
@@ -97,6 +117,29 @@ export class WorkoutController {
         user.id,
         Number(libraryId),
       ),
+    };
+  }
+
+  /**
+   * The full history of one exercise, resolved by the library id — the standalone
+   * history view opened from the Exercise Library, the Training Builder, or a past
+   * workout. Every completed session, each set with its effort markers, and the
+   * per-session volume / best set / estimated 1RM. Declared before ':id' so this
+   * literal path wins.
+   */
+  @Get('exercise-history/:libraryId/full')
+  async fullExerciseHistory(
+    @Param('libraryId') libraryId: string,
+    @Req() req: Request,
+  ): Promise<{ history: FullExerciseHistory }> {
+    const user = await this.currentUser(req);
+    if (!ID_PATTERN.test(libraryId)) {
+      throw new BadRequestException('Invalid exercise id.');
+    }
+    return {
+      history: await this.workoutService.getFullExerciseHistory(user.id, {
+        libraryId: Number(libraryId),
+      }),
     };
   }
 

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useExerciseLibrary, type LibraryExercise } from '../exercise-library'
+import { ExerciseHistoryModal } from './ExerciseHistory'
 
 /**
  * Turns a YouTube URL (watch, youtu.be, shorts, or already-embed form) into an
@@ -73,6 +74,7 @@ function summaryLine(exercise: LibraryExercise): string {
 
 /** The detail body revealed when a card is expanded. */
 function ExerciseDetail({ exercise }: { exercise: LibraryExercise }) {
+  const [historyOpen, setHistoryOpen] = useState(false)
   const embedUrl = youTubeEmbedUrl(exercise.videoUrl)
   const details = [
     exercise.equipment,
@@ -99,16 +101,31 @@ function ExerciseDetail({ exercise }: { exercise: LibraryExercise }) {
           />
         </div>
       )}
-      {exercise.sourceUrl && (
-        <a
-          className="exercise-source"
-          href={exercise.sourceUrl}
-          target="_blank"
-          rel="noreferrer"
+      <div className="exercise-detail-actions">
+        <button
+          type="button"
+          className="nav-button exercise-detail-history"
+          onClick={() => setHistoryOpen(true)}
         >
-          Source
-        </a>
-      )}
+          History
+        </button>
+        {exercise.sourceUrl && (
+          <a
+            className="exercise-source"
+            href={exercise.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Source
+          </a>
+        )}
+      </div>
+      <ExerciseHistoryModal
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        exerciseName={exercise.name}
+        exerciseLibraryId={exercise.id}
+      />
     </div>
   )
 }

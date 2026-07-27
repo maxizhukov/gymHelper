@@ -3298,3 +3298,219 @@ code {
   background: rgba(255, 255, 255, 0.09);
 }
 
+/* ── Exercise history view ───────────────────────────────────────────────────
+   The standalone history modal (bottom sheet) opened from the Library, the
+   Builder and a finished workout. Reuses the dialog-popup glass sheet, capped in
+   height with its own scroll so a long history never runs off the screen. */
+.exercise-history-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+  padding-top: 1.25rem;
+}
+
+.exercise-history-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.exercise-history-heading .label {
+  margin: 0;
+}
+
+.exercise-history-title {
+  margin: 0.15rem 0 0;
+  font-size: 1.25rem;
+  line-height: 1.2;
+}
+
+.exercise-history-close {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.exercise-history-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.exercise-history-empty {
+  padding: 1.5rem 0;
+  text-align: center;
+}
+
+.exercise-history-summary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+}
+
+.exercise-history-stat {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+
+.exercise-history-stat .label {
+  margin: 0;
+}
+
+.exercise-history-stat-value {
+  margin: 0.2rem 0 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.exercise-history-trend {
+  margin-bottom: 1rem;
+}
+
+.exercise-history-sessions {
+  margin-top: 0.5rem;
+}
+
+.exercise-history-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.exercise-history-session {
+  padding: 0.8rem;
+}
+
+.exercise-history-session-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+}
+
+.exercise-history-session-date {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.exercise-history-session-day {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: right;
+}
+
+.exercise-history-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.exercise-history-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.exercise-history-chip-warmup {
+  border-style: dashed;
+  color: var(--muted-2);
+  background: transparent;
+}
+
+.exercise-history-chip-tag {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.exercise-history-session-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin-top: 0.6rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.exercise-history-session-foot strong {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Library detail: History sits alongside the Source link. */
+.exercise-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.exercise-detail-history {
+  padding: 0.45rem 0.9rem;
+}
+
+/* Builder row: the History action shares the icon-button shape. */
+.builder-icon-history {
+  font-size: 0.9rem;
+}
+
+/* Finished-workout exercise history list. */
+.workout-history-section {
+  margin-top: 1.5rem;
+}
+
+.workout-history-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.workout-history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+
+.workout-history-name {
+  font-weight: 600;
+}
+
+.workout-history-open {
+  flex-shrink: 0;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+}
+

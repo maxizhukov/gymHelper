@@ -80,6 +80,18 @@ const UNIQUE_VIOLATION = '23505';
 /** How many past workouts the Previous Performance panel lists. */
 const HISTORY_WORKOUTS = 5;
 
+/** How many past sessions the full exercise-history view returns at once. The
+ *  summary figures (best ever, times trained) are computed all-time regardless
+ *  of this cap, so it bounds only the scrollable session list's payload. */
+const FULL_HISTORY_SESSIONS = 50;
+
+/** Epley estimated one-rep max, or null when there is no load to estimate from
+ *  (a bodyweight set at weight 0, or an empty set). Rounded to one decimal. */
+function estimatedOneRepMax(weight: number, reps: number): number | null {
+  if (weight <= 0 || reps <= 0) return null;
+  return Math.round(weight * (1 + reps / 30) * 10) / 10;
+}
+
 /** What the user did, in order. Append-only; never updated or deleted. */
 export type WorkoutEventKind =
   | 'workout_started'
@@ -190,6 +202,65 @@ export interface ExerciseHistory {
   recent: HistoryWorkout[];
   /** The heaviest set ever logged, best reps breaking a tie. */
   best: { weight: number; reps: number } | null;
+}
+
+/** One logged set in the full-history view, with its effort markers. */
+export interface FullHistorySet {
+  setNumber: number;
+  weight: number;
+  reps: number;
+  rir: number | null;
+  rpe: number | null;
+  isWarmup: boolean;
+}
+
+/** One past session's worth of sets for a single exercise, with per-session
+ *  aggregates computed over the work sets only (warmups are still returned so
+ *  the UI can show them, but they never enter volume or the best set). */
+export interface FullHistorySession {
+  workoutId: number;
+  completedAt: string;
+  /** The training day or template day this session was, or 'Workout'. */
+  dayName: string;
+  sets: FullHistorySet[];
+  /** Sum of weight × reps over the work sets. */
+  totalVolume: number;
+  /** Sum of reps over the work sets. */
+  totalReps: number;
+  /** The work set with the highest estimated 1RM, or null when none. */
+  bestSet: { weight: number; reps: number; e1rm: number | null } | null;
+  /** The best estimated 1RM of the session's work sets, or null. */
+  bestE1rm: number | null;
+}
+
+/** One chart-ready point of the exercise trend, oldest → newest. */
+export interface HistoryTrendPoint {
+  date: string;
+  totalVolume: number;
+  bestE1rm: number | null;
+  bestWeight: number;
+  totalReps: number;
+}
+
+/**
+ * The full history of one exercise, for the standalone history view opened
+ * outside an active workout. Resolved by `exercise_library_id` when present and
+ * by snapshotted name otherwise, so a legacy-plan exercise still surfaces.
+ */
+export interface FullExerciseHistory {
+  exerciseLibraryId: number | null;
+  exerciseName: string;
+  /** Distinct completed sessions that logged any set on this exercise. */
+  timesTrained: number;
+  lastTrainedAt: string | null;
+  /** The heaviest work set ever, best reps breaking a tie. */
+  bestWeight: { weight: number; reps: number } | null;
+  /** The highest estimated 1RM ever, over work sets. */
+  bestE1rm: number | null;
+  /** Up to `FULL_HISTORY_SESSIONS` sessions, newest first. */
+  sessions: FullHistorySession[];
+  /** The same sessions as trend points, oldest → newest for charting. */
+  trend: HistoryTrendPoint[];
 }
 
 interface SessionRow {
@@ -1003,6 +1074,238 @@ export class WorkoutService implements OnModuleInit {
       last: recent[0] ?? null,
       recent,
       best: bestRow ? { weight: bestRow.weight, reps: bestRow.reps } : null,
+    };
+  }
+
+  /**
+   * The complete history of one exercise, for the standalone history view that
+   * opens outside an active workout — from the Exercise Library, the Training
+   * Builder, or a past workout's detail. It answers a different question from the
+   * Previous Performance panel: not "what do I beat today?" but "how has this
+   * lift progressed?", so it returns every session (up to a cap), each set with
+   * its effort markers, and per-session volume / best set / estimated 1RM.
+   *
+   * Resolved by `exercise_library_id` when the caller has one — the identity the
+   * Training Builder assigns, so history follows a movement across days and
+   * templates — and by snapshotted name otherwise, which is the only handle a
+   * legacy-plan exercise has. The two never mix: a caller passes exactly one.
+   *
+   * Only completed workouts count. Volume, total reps and the best set are over
+   * the work sets only; warmups are still returned so the UI can show them, but
+   * they never inflate the numbers. The summary figures (times trained, best
+   * ever) are computed all-time, so a cap on the session list cannot hide a PR.
+   */
+  async getFullExerciseHistory(
+    userId: number,
+    by: { libraryId: number } | { name: string },
+  ): Promise<FullExerciseHistory> {
+    const byLibrary = 'libraryId' in by;
+    const exerciseLibraryId = byLibrary ? by.libraryId : null;
+
+    // The name is the heading and, for a legacy exercise, the match key. When
+    // resolving by library id, prefer the catalogue name so the heading reads
+    // correctly even before any set has been logged.
+    let exerciseName = byLibrary ? '' : by.name;
+    if (byLibrary) {
+      const nameResult = await this.db.query<{ name: string }>(
+        'SELECT name FROM exercise_library WHERE id = $1',
+        [exerciseLibraryId],
+      );
+      exerciseName = nameResult.rows[0]?.name ?? '';
+    }
+
+    // The predicate that says "this exercise", plus the value it binds. Both
+    // queries below reuse it so the two resolution modes share one code path.
+    const match = byLibrary
+      ? 'e.exercise_library_id = $2'
+      : 'e.name = $2';
+    const matchValue = byLibrary ? exerciseLibraryId : exerciseName;
+
+    // Times trained and last trained: all-time, so neither is bounded by the
+    // session cap. A distinct-session count treats a session as one training of
+    // the exercise however many sets it holds.
+    const summaryResult = await this.db.query<{
+      times_trained: number;
+      last_trained: Date | null;
+    }>(
+      `SELECT COUNT(DISTINCT s.id)::int AS times_trained,
+              MAX(s.completed_at) AS last_trained
+         FROM workout_sessions s
+         JOIN workout_session_exercises e ON e.session_id = s.id
+         JOIN workout_sets ws ON ws.exercise_id = e.id
+        WHERE s.user_id = $1 AND s.completed_at IS NOT NULL AND ${match}`,
+      [userId, matchValue],
+    );
+    const timesTrained = summaryResult.rows[0]?.times_trained ?? 0;
+    const lastTrained = summaryResult.rows[0]?.last_trained ?? null;
+
+    if (timesTrained === 0) {
+      return {
+        exerciseLibraryId,
+        exerciseName,
+        timesTrained: 0,
+        lastTrainedAt: null,
+        bestWeight: null,
+        bestE1rm: null,
+        sessions: [],
+        trend: [],
+      };
+    }
+
+    // Best work set ever, by weight then reps — a personal best is not something
+    // that scrolls off the end of the capped session list.
+    const bestWeightResult = await this.db.query<{
+      weight: number;
+      reps: number;
+    }>(
+      `SELECT ws.actual_weight::float8 AS weight, ws.actual_reps AS reps
+         FROM workout_sets ws
+         JOIN workout_session_exercises e ON e.id = ws.exercise_id
+         JOIN workout_sessions s ON s.id = ws.workout_session_id
+        WHERE s.user_id = $1 AND s.completed_at IS NOT NULL
+          AND ws.is_warmup = false AND ${match}
+        ORDER BY ws.actual_weight DESC, ws.actual_reps DESC
+        LIMIT 1`,
+      [userId, matchValue],
+    );
+    const bestWeightRow = bestWeightResult.rows[0];
+
+    // Best estimated 1RM ever, over work sets — the same Epley formula the
+    // per-session best uses, so the summary and the sessions agree.
+    const bestE1rmResult = await this.db.query<{
+      weight: number;
+      reps: number;
+    }>(
+      `SELECT ws.actual_weight::float8 AS weight, ws.actual_reps AS reps
+         FROM workout_sets ws
+         JOIN workout_session_exercises e ON e.id = ws.exercise_id
+         JOIN workout_sessions s ON s.id = ws.workout_session_id
+        WHERE s.user_id = $1 AND s.completed_at IS NOT NULL
+          AND ws.is_warmup = false AND ws.actual_weight > 0 AND ${match}
+        ORDER BY ws.actual_weight * (1 + ws.actual_reps / 30.0) DESC
+        LIMIT 1`,
+      [userId, matchValue],
+    );
+    const bestE1rmRow = bestE1rmResult.rows[0];
+    const bestE1rm = bestE1rmRow
+      ? estimatedOneRepMax(bestE1rmRow.weight, bestE1rmRow.reps)
+      : null;
+
+    // The capped list of sessions, newest first, each with the day it was.
+    const sessionsResult = await this.db.query<{
+      id: number;
+      completed_at: Date;
+      day_name: string;
+    }>(
+      `SELECT s.id, s.completed_at,
+              COALESCE(d.day, td.name, 'Workout') AS day_name
+         FROM workout_sessions s
+         LEFT JOIN training_days d ON d.id = s.training_day_id
+         LEFT JOIN training_template_days td ON td.id = s.template_day_id
+        WHERE s.user_id = $1
+          AND s.completed_at IS NOT NULL
+          AND EXISTS (
+                SELECT 1
+                  FROM workout_session_exercises e
+                  JOIN workout_sets ws ON ws.exercise_id = e.id
+                 WHERE e.session_id = s.id AND ${match}
+              )
+        ORDER BY s.completed_at DESC
+        LIMIT $3`,
+      [userId, matchValue, FULL_HISTORY_SESSIONS],
+    );
+    const sessionRows = sessionsResult.rows;
+
+    const setsResult = await this.db.query<{
+      workout_session_id: number;
+      set_number: number;
+      weight: number;
+      reps: number;
+      rir: number | null;
+      rpe: number | null;
+      is_warmup: boolean;
+    }>(
+      `SELECT ws.workout_session_id, ws.set_number,
+              ws.actual_weight::float8 AS weight, ws.actual_reps AS reps,
+              ws.rir, ws.rpe::float8 AS rpe, ws.is_warmup
+         FROM workout_sets ws
+         JOIN workout_session_exercises e ON e.id = ws.exercise_id
+        WHERE ws.workout_session_id = ANY($1::int[]) AND ${match}
+        ORDER BY ws.workout_session_id, ws.set_number`,
+      [sessionRows.map((row) => row.id), matchValue],
+    );
+
+    const setsByWorkout = new Map<number, FullHistorySet[]>();
+    for (const row of setsResult.rows) {
+      const sets = setsByWorkout.get(row.workout_session_id) ?? [];
+      sets.push({
+        setNumber: row.set_number,
+        weight: row.weight,
+        reps: row.reps,
+        rir: row.rir,
+        rpe: row.rpe,
+        isWarmup: row.is_warmup,
+      });
+      setsByWorkout.set(row.workout_session_id, sets);
+    }
+
+    const sessions: FullHistorySession[] = sessionRows.map((row) => {
+      const sets = setsByWorkout.get(row.id) ?? [];
+      const workSets = sets.filter((set) => !set.isWarmup);
+
+      let totalVolume = 0;
+      let totalReps = 0;
+      let bestSet: FullHistorySession['bestSet'] = null;
+      let bestSetE1rm = -1;
+      for (const set of workSets) {
+        totalVolume += set.weight * set.reps;
+        totalReps += set.reps;
+        const e1rm = estimatedOneRepMax(set.weight, set.reps);
+        // Rank by 1RM, but a set with no load still beats "nothing chosen yet"
+        // so a bodyweight session reports a best set rather than none.
+        const rank = e1rm ?? set.weight;
+        if (bestSet === null || rank > bestSetE1rm) {
+          bestSet = { weight: set.weight, reps: set.reps, e1rm };
+          bestSetE1rm = rank;
+        }
+      }
+
+      return {
+        workoutId: row.id,
+        completedAt: row.completed_at.toISOString(),
+        dayName: row.day_name,
+        sets,
+        totalVolume: Math.round(totalVolume * 100) / 100,
+        totalReps,
+        bestSet,
+        bestE1rm: bestSet?.e1rm ?? null,
+      };
+    });
+
+    // Oldest → newest, so a chart reads left-to-right in time.
+    const trend: HistoryTrendPoint[] = sessions
+      .map((session) => ({
+        date: session.completedAt,
+        totalVolume: session.totalVolume,
+        bestE1rm: session.bestE1rm,
+        bestWeight: session.sets
+          .filter((set) => !set.isWarmup)
+          .reduce((max, set) => Math.max(max, set.weight), 0),
+        totalReps: session.totalReps,
+      }))
+      .reverse();
+
+    return {
+      exerciseLibraryId,
+      exerciseName,
+      timesTrained,
+      lastTrainedAt: lastTrained ? lastTrained.toISOString() : null,
+      bestWeight: bestWeightRow
+        ? { weight: bestWeightRow.weight, reps: bestWeightRow.reps }
+        : null,
+      bestE1rm,
+      sessions,
+      trend,
     };
   }
 

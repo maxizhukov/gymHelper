@@ -94,6 +94,51 @@ export type ExerciseHistory = {
   best: { weight: number; reps: number } | null
 }
 
+/** One logged set in the full-history view, with its effort markers. */
+export type FullHistorySet = {
+  setNumber: number
+  weight: number
+  reps: number
+  rir: number | null
+  rpe: number | null
+  isWarmup: boolean
+}
+
+/** One past session for a single exercise, with its work-set aggregates. */
+export type FullHistorySession = {
+  workoutId: number
+  completedAt: string
+  dayName: string
+  sets: FullHistorySet[]
+  totalVolume: number
+  totalReps: number
+  bestSet: { weight: number; reps: number; e1rm: number | null } | null
+  bestE1rm: number | null
+}
+
+/** One chart-ready point of the exercise trend, oldest → newest. */
+export type HistoryTrendPoint = {
+  date: string
+  totalVolume: number
+  bestE1rm: number | null
+  bestWeight: number
+  totalReps: number
+}
+
+/** The full history of one exercise, for the standalone history view. */
+export type FullExerciseHistory = {
+  exerciseLibraryId: number | null
+  exerciseName: string
+  timesTrained: number
+  lastTrainedAt: string | null
+  bestWeight: { weight: number; reps: number } | null
+  bestE1rm: number | null
+  /** Up to fifty sessions, newest first. */
+  sessions: FullHistorySession[]
+  /** The same sessions as trend points, oldest → newest. */
+  trend: HistoryTrendPoint[]
+}
+
 /** The overall verdict of a post-workout summary, kept to a small closed set. */
 export type WorkoutAssessment = 'better' | 'similar' | 'worse' | 'first'
 
@@ -514,9 +559,17 @@ export function useWorkoutSummary(workoutId: number | null): {
  */
 const historyCache = new Map<string, ExerciseHistory>()
 
+/**
+ * Full history already fetched for the standalone history view, keyed the same
+ * way as `historyCache`. Emptied alongside it when the session changes, for the
+ * same reason: it holds one user's lifting numbers.
+ */
+const fullHistoryCache = new Map<string, FullExerciseHistory>()
+
 /** Drops every cached exercise history. Called whenever the session changes. */
 export function clearExerciseHistoryCache(): void {
   historyCache.clear()
+  fullHistoryCache.clear()
 }
 
 /**
@@ -582,6 +635,81 @@ export function useExerciseHistory(
   }, [cacheKey, url])
 
   return state
+}
+
+const FULL_HISTORY_ERROR = 'Could not load exercise history.'
+
+/**
+ * The full history of one exercise, for the standalone history view opened
+ * outside a workout. Resolved by library id when the exercise carries one, so
+ * history follows the movement, and by name otherwise — the only handle a
+ * legacy-plan exercise has. Cached for the session, keyed by whichever was used.
+ *
+ * Not fetched until an id or name is given: the modal passes them only once it
+ * opens, so a closed modal costs no request.
+ */
+export function useFullExerciseHistory(
+  exerciseName: string,
+  exerciseLibraryId: number | null,
+  enabled: boolean,
+): Loadable<FullExerciseHistory> {
+  const cacheKey =
+    exerciseLibraryId !== null
+      ? `lib:${exerciseLibraryId}`
+      : `name:${exerciseName}`
+  const url =
+    exerciseLibraryId !== null
+      ? `/api/workout/exercise-history/${exerciseLibraryId}/full`
+      : `/api/workout/history/full?name=${encodeURIComponent(exerciseName)}`
+
+  const [state, setState] = useState<Loadable<FullExerciseHistory>>(() => {
+    const cached = fullHistoryCache.get(cacheKey)
+    return cached ? { status: 'ready', data: cached } : { status: 'loading' }
+  })
+
+  useEffect(() => {
+    if (!enabled) return
+
+    const cached = fullHistoryCache.get(cacheKey)
+    if (cached) {
+      setState({ status: 'ready', data: cached })
+      return
+    }
+
+    const controller = new AbortController()
+    setState({ status: 'loading' })
+
+    void (async () => {
+      try {
+        const res = await fetch(url, {
+          credentials: 'include',
+          signal: controller.signal,
+        })
+        if (!res.ok) {
+          setState({
+            status: 'error',
+            message: await errorMessage(res, FULL_HISTORY_ERROR),
+          })
+          return
+        }
+        const data = (await res.json()) as { history: FullExerciseHistory }
+        fullHistoryCache.set(cacheKey, data.history)
+        setState({ status: 'ready', data: data.history })
+      } catch (err) {
+        if (isAbort(err)) return
+        setState({ status: 'error', message: FULL_HISTORY_ERROR })
+      }
+    })()
+
+    return () => controller.abort()
+  }, [cacheKey, url, enabled])
+
+  return state
+}
+
+/** `102.5`, `100` — an estimated 1RM read as a plain number, zeros trimmed. */
+export function formatE1rm(e1rm: number): string {
+  return String(Math.round(e1rm * 10) / 10)
 }
 
 /**
