@@ -1325,6 +1325,141 @@
   margin-top: 1.5rem;
 }
 
+.exercise-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--glass-fill);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+
+.exercise-search {
+  width: 100%;
+}
+
+.exercise-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.exercise-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.75rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.exercise-chip.is-active {
+  color: #fff;
+  border-color: transparent;
+  background: var(--grad-primary);
+  box-shadow: var(--shadow-primary);
+}
+
+.exercise-chip-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.exercise-chip:not(.is-active) .exercise-chip-count {
+  color: var(--muted-2);
+  background: var(--surface-3);
+}
+
+.exercise-selects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.exercise-selects .builder-input {
+  flex: 1;
+  min-width: 8rem;
+  font-size: 0.9rem;
+}
+
+.exercise-result-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.exercise-result-count {
+  margin: 0;
+}
+
+.exercise-clear-inline {
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--lime-deep);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.exercise-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+}
+
+.exercise-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+}
+
+.exercise-badge-plan {
+  color: var(--lime-tint-text);
+  background: var(--lime-tint);
+}
+
+.exercise-badge-used {
+  color: #bfeee0;
+  background: rgba(75, 224, 168, 0.16);
+}
+
+.exercise-showmore {
+  align-self: center;
+}
+
+.exercise-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.exercise-clear {
+  margin-top: 0.5rem;
+}
+
 .exercise-group-heading {
   font-size: 0.8rem;
   font-weight: 700;

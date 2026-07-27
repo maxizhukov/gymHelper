@@ -24,6 +24,12 @@ export type LibraryExercise = {
   thumbnailUrl: string | null
   isActive: boolean
   sortOrder: number | null
+  // Usage metadata, present when the library is loaded from the search endpoint.
+  // Optional so existing callers (e.g. the Training Builder picker) are untouched.
+  usedInPlans?: boolean
+  usedInWorkouts?: boolean
+  workoutCount?: number
+  lastUsedAt?: string | null
 }
 
 const GENERIC_ERROR = 'Could not load the exercise library. Please try again.'

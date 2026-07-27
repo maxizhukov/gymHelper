@@ -25,6 +25,39 @@ export interface LibraryExercise {
   sortOrder: number | null;
 }
 
+/** How the caller wants the library narrowed by where an exercise is used. */
+export type ExerciseUsage = 'all' | 'plans' | 'history';
+
+/** The optional filters a library search accepts. `userId` scopes usage. */
+export interface ExerciseSearchFilters {
+  userId: number;
+  search?: string;
+  category?: string;
+  muscleGroup?: string;
+  usage?: ExerciseUsage;
+  limit?: number;
+  offset?: number;
+}
+
+/** A library exercise annotated with where the user has used it. */
+export interface LibraryExerciseWithUsage extends LibraryExercise {
+  usedInPlans: boolean;
+  usedInWorkouts: boolean;
+  workoutCount: number;
+  lastUsedAt: string | null;
+}
+
+/**
+ * A page of search results plus the totals the UI shows: `total` is how many
+ * rows matched the filters (before limit/offset), and `counts` are the stable
+ * per-bucket totals for the chips, independent of the current search.
+ */
+export interface ExerciseSearchResult {
+  exercises: LibraryExerciseWithUsage[];
+  total: number;
+  counts: { all: number; plans: number; history: number };
+}
+
 /** The seed row shape — the natural key is name + category + muscleGroup. */
 interface ExerciseSeed {
   name: string;
@@ -172,6 +205,15 @@ interface ExerciseRow {
   sort_order: number | null;
 }
 
+/** A library row plus the usage annotations computed per user. */
+interface ExerciseUsageRow extends ExerciseRow {
+  used_in_plans: boolean;
+  used_in_workouts: boolean;
+  workout_count: number | string;
+  last_used_at: Date | string | null;
+  total_count?: number | string;
+}
+
 /** The columns read back for a library exercise, in a stable order. */
 const EXERCISE_SELECT = `
   id,
@@ -187,6 +229,44 @@ const EXERCISE_SELECT = `
   thumbnail_url,
   is_active,
   sort_order
+`;
+
+/**
+ * The library annotated with per-user usage, as a subquery. `$1` is the user id.
+ * `used_in_plans` is true when the exercise sits in one of the user's active
+ * template days; `workout_count` / `last_used_at` come from that user's finished
+ * workouts, and `used_in_workouts` is derived from the count. Wrapping this lets
+ * callers filter and count on the computed columns without repeating the joins.
+ */
+const USAGE_BASE = `
+  SELECT
+    el.id, el.name, el.category, el.muscle_group, el.equipment,
+    el.movement_pattern, el.difficulty, el.description_ru, el.source_url,
+    el.video_url, el.thumbnail_url, el.is_active, el.sort_order,
+    EXISTS (
+      SELECT 1
+        FROM training_template_day_exercises tde
+        JOIN training_template_days d ON d.id = tde.day_id
+        JOIN training_templates t ON t.id = d.template_id
+       WHERE t.user_id = $1
+         AND tde.is_active = true
+         AND tde.exercise_library_id = el.id
+    ) AS used_in_plans,
+    COALESCE(w.workout_count, 0) AS workout_count,
+    (COALESCE(w.workout_count, 0) > 0) AS used_in_workouts,
+    w.last_used_at
+  FROM exercise_library el
+  LEFT JOIN (
+    SELECT wse.exercise_library_id AS lib_id,
+           COUNT(DISTINCT s.id) AS workout_count,
+           MAX(s.completed_at) AS last_used_at
+      FROM workout_session_exercises wse
+      JOIN workout_sessions s ON s.id = wse.session_id
+     WHERE s.user_id = $1
+       AND s.completed_at IS NOT NULL
+       AND wse.exercise_library_id IS NOT NULL
+     GROUP BY wse.exercise_library_id
+  ) w ON w.lib_id = el.id
 `;
 
 @Injectable()
@@ -307,6 +387,90 @@ export class ExerciseLibraryService implements OnModuleInit {
     return result.rows.map((row) => this.mapExercise(row));
   }
 
+  /**
+   * The active library, narrowed by search text, category, muscle group, and
+   * where the user has used the exercise, and paged by limit/offset. Each row
+   * carries usage metadata; `total` is the filtered count and `counts` are the
+   * stable per-bucket totals for the filter chips. Rows are sorted the same way
+   * as `list`, so the frontend can group them directly.
+   */
+  async search(filters: ExerciseSearchFilters): Promise<ExerciseSearchResult> {
+    const { userId } = filters;
+
+    // Global usage totals across the whole active library for this user. Kept
+    // independent of the search/category filters so the chips always show the
+    // real bucket sizes ("All 400", "In my plans X", "Used before Y").
+    const countsResult = await this.db.query<{
+      all_count: string;
+      plans_count: string;
+      history_count: string;
+    }>(
+      `SELECT
+          count(*) FILTER (WHERE is_active) AS all_count,
+          count(*) FILTER (WHERE is_active AND used_in_plans) AS plans_count,
+          count(*) FILTER (WHERE is_active AND used_in_workouts) AS history_count
+         FROM (${USAGE_BASE}) base`,
+      [userId],
+    );
+    const countsRow = countsResult.rows[0];
+    const counts = {
+      all: Number(countsRow?.all_count ?? 0),
+      plans: Number(countsRow?.plans_count ?? 0),
+      history: Number(countsRow?.history_count ?? 0),
+    };
+
+    // Filters are appended after $1 (the user id used inside USAGE_BASE).
+    const conditions = ['is_active = true'];
+    const params: unknown[] = [userId];
+
+    if (filters.search) {
+      params.push(`%${filters.search}%`);
+      const p = `$${params.length}`;
+      conditions.push(
+        `(name ILIKE ${p} OR category ILIKE ${p} OR muscle_group ILIKE ${p} OR description_ru ILIKE ${p})`,
+      );
+    }
+    if (filters.category) {
+      params.push(filters.category);
+      conditions.push(`category = $${params.length}`);
+    }
+    if (filters.muscleGroup) {
+      params.push(filters.muscleGroup);
+      conditions.push(`muscle_group = $${params.length}`);
+    }
+    if (filters.usage === 'plans') conditions.push('used_in_plans');
+    if (filters.usage === 'history') conditions.push('used_in_workouts');
+
+    let pageClause = '';
+    if (filters.limit != null) {
+      params.push(filters.limit);
+      pageClause += ` LIMIT $${params.length}`;
+      params.push(filters.offset ?? 0);
+      pageClause += ` OFFSET $${params.length}`;
+    }
+
+    // count(*) OVER() is the filtered total before limit/offset is applied.
+    const rowsResult = await this.db.query<ExerciseUsageRow>(
+      `SELECT sub.*, count(*) OVER() AS total_count
+         FROM (${USAGE_BASE}) sub
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY category NULLS LAST, muscle_group NULLS LAST, name
+        ${pageClause}`,
+      params,
+    );
+
+    const total =
+      rowsResult.rows.length > 0
+        ? Number(rowsResult.rows[0].total_count ?? 0)
+        : 0;
+
+    return {
+      exercises: rowsResult.rows.map((row) => this.mapUsageExercise(row)),
+      total,
+      counts,
+    };
+  }
+
   /** One exercise by id, or null when it does not exist. */
   async findOne(id: number): Promise<LibraryExercise | null> {
     const result = await this.db.query<ExerciseRow>(
@@ -332,6 +496,18 @@ export class ExerciseLibraryService implements OnModuleInit {
       thumbnailUrl: row.thumbnail_url,
       isActive: row.is_active,
       sortOrder: row.sort_order === null ? null : Number(row.sort_order),
+    };
+  }
+
+  private mapUsageExercise(row: ExerciseUsageRow): LibraryExerciseWithUsage {
+    return {
+      ...this.mapExercise(row),
+      usedInPlans: Boolean(row.used_in_plans),
+      usedInWorkouts: Boolean(row.used_in_workouts),
+      workoutCount: Number(row.workout_count ?? 0),
+      lastUsedAt: row.last_used_at
+        ? new Date(row.last_used_at).toISOString()
+        : null,
     };
   }
 }
