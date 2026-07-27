@@ -183,6 +183,20 @@ export class AiWorkoutSummaryService {
   }
 
   /**
+   * The stored summary for a finished workout, or null when none has been
+   * generated yet. Read-only — it never calls the model — so Training History
+   * can show saved highlights without triggering (or paying for) a generation.
+   * Same ownership/completion rules as {@link getSummary}.
+   */
+  async getStoredSummary(
+    userId: number,
+    sessionId: number,
+  ): Promise<WorkoutSummaryPayload | null> {
+    const session = await this.loadCompletedSession(userId, sessionId);
+    return this.payloadFromStored(session);
+  }
+
+  /**
    * Regenerates the summary from scratch, ignoring any cached copy — the manual
    * "try again" path. Same ownership/completion rules as {@link getSummary}.
    */

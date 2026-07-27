@@ -12,16 +12,17 @@ import {
 import { useActiveWorkout } from '../workout'
 import BackHeader from '../components/BackHeader'
 import TabBar, { type Tab } from '../components/TabBar'
-import { BookIcon, DumbbellIcon, PlayIcon } from '../components/icons'
+import { BookIcon, ChartIcon, DumbbellIcon, PlayIcon } from '../components/icons'
 import ExercisesPanel from './ExercisesPanel'
 import FoodPanel from './FoodPanel'
 import { ProfileContent } from './ProfilePage'
 import StatsPanel from './StatsPanel'
 import TrainingBuilderPanel from './TrainingBuilderPanel'
+import TrainingHistoryPanel from './TrainingHistory'
 import WorkoutPreview from './WorkoutPreview'
 
 /** Screens pushed on top of a section root; they hide the tab bar. */
-type Pushed = 'builder' | 'exercises' | 'preview'
+type Pushed = 'builder' | 'exercises' | 'preview' | 'history'
 
 /**
  * The signed-in app shell. It recreates the design's navigation model: a
@@ -70,6 +71,7 @@ export default function HomePage() {
   const openPreview = () => setPushed('preview')
   const openBuilder = () => setPushed('builder')
   const openExercises = () => setPushed('exercises')
+  const openHistory = () => setPushed('history')
 
   // ── Pushed views: back header, no tab bar ────────────────────────────────
   if (pushed === 'builder') {
@@ -83,6 +85,13 @@ export default function HomePage() {
     return (
       <PushedScreen title="Exercise Library" onBack={() => setPushed(null)}>
         <ExercisesPanel />
+      </PushedScreen>
+    )
+  }
+  if (pushed === 'history') {
+    return (
+      <PushedScreen title="Training History" onBack={() => setPushed(null)}>
+        <TrainingHistoryPanel />
       </PushedScreen>
     )
   }
@@ -116,6 +125,7 @@ export default function HomePage() {
             onStart={openPreview}
             onOpenBuilder={openBuilder}
             onOpenExercises={openExercises}
+            onOpenHistory={openHistory}
             onOpenFood={() => setTab('food')}
             onOpenProfile={() => setTab('profile')}
           />
@@ -150,7 +160,7 @@ export default function HomePage() {
             <div className="page-head">
               <h1 className="page-title">Progress</h1>
             </div>
-            <StatsPanel />
+            <StatsPanel onOpenHistory={openHistory} />
           </>
         )}
 
@@ -196,6 +206,7 @@ function Dashboard({
   onStart,
   onOpenBuilder,
   onOpenExercises,
+  onOpenHistory,
   onOpenFood,
   onOpenProfile,
 }: {
@@ -210,6 +221,7 @@ function Dashboard({
   onStart: () => void
   onOpenBuilder: () => void
   onOpenExercises: () => void
+  onOpenHistory: () => void
   onOpenFood: () => void
   onOpenProfile: () => void
 }) {
@@ -335,6 +347,13 @@ function Dashboard({
           </span>
           <span className="qa-title">Exercise Library</span>
           <span className="qa-sub">Browse all movements</span>
+        </button>
+        <button type="button" className="qa-card" onClick={onOpenHistory}>
+          <span className="qa-icon indigo">
+            <ChartIcon size={22} />
+          </span>
+          <span className="qa-title">Training History</span>
+          <span className="qa-sub">Past workouts & AI recaps</span>
         </button>
       </div>
     </div>

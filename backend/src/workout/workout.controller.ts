@@ -29,6 +29,8 @@ import {
 } from './ai-workout-summary.service';
 import {
   WorkoutService,
+  type CompletedWorkoutDetail,
+  type CompletedWorkoutListItem,
   type ExerciseHistory,
   type FullExerciseHistory,
   type WorkoutState,
@@ -141,6 +143,55 @@ export class WorkoutController {
         libraryId: Number(libraryId),
       }),
     };
+  }
+
+  /**
+   * The Training History list: the user's completed workouts, newest first, each
+   * with its totals and its saved AI highlights. Read-only — it never generates a
+   * summary — so opening the list costs no OpenAI call. Declared before ':id' so
+   * this literal path wins.
+   */
+  @Get('completed')
+  async completed(
+    @Req() req: Request,
+  ): Promise<{ workouts: CompletedWorkoutListItem[] }> {
+    const user = await this.currentUser(req);
+    return {
+      workouts: await this.workoutService.listCompletedWorkouts(user.id),
+    };
+  }
+
+  /**
+   * One completed workout in full for the Training History detail view: its
+   * exercises and sets, plus the saved AI summary read straight from the cache.
+   * Read-only — the summary is never regenerated on open; that is the explicit
+   * regenerate endpoint's job. Declared before ':id' so this literal path wins.
+   */
+  @Get('completed/:id')
+  async completedDetail(
+    @Param('id') id: string,
+    @Req() req: Request,
+  ): Promise<{
+    detail: CompletedWorkoutDetail;
+    summary: WorkoutSummaryPayload | null;
+  }> {
+    const user = await this.currentUser(req);
+    if (!ID_PATTERN.test(id)) {
+      throw new BadRequestException('Invalid workout id.');
+    }
+    const detail = await this.workoutService.getCompletedWorkoutDetail(
+      user.id,
+      Number(id),
+    );
+    if (!detail) {
+      throw new NotFoundException('Workout not found.');
+    }
+    // Read-only: the saved summary or null. Never generated here.
+    const summary = await this.aiSummaryService.getStoredSummary(
+      user.id,
+      Number(id),
+    );
+    return { detail, summary };
   }
 
   /**

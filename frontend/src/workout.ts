@@ -202,6 +202,73 @@ export type WorkoutAiSummary = {
 }
 
 /**
+ * The saved AI highlights shown on a Training History row: a headline and a
+ * short summary read from the workout's cached summary. Never generated on read.
+ */
+export type SavedWorkoutSummaryPreview = {
+  headline: string
+  summary: string
+  assessment: WorkoutAssessment
+  generatedAt: string
+}
+
+/** One completed workout in the Training History list, newest first. */
+export type CompletedWorkoutListItem = {
+  id: number
+  completedAt: string
+  dayName: string
+  /** The Training Builder plan this day belongs to, or null for a legacy day. */
+  planName: string | null
+  exerciseCount: number
+  setCount: number
+  totalVolume: number
+  durationSeconds: number | null
+  bodyWeightKg: number | null
+  /** The saved AI highlights, or null when none were generated for this workout. */
+  aiSummary: SavedWorkoutSummaryPreview | null
+}
+
+/** One logged set in a Training History detail, with its effort markers. */
+export type CompletedWorkoutDetailSet = {
+  setNumber: number
+  weight: number
+  reps: number
+  rir: number | null
+  rpe: number | null
+  isWarmup: boolean
+}
+
+/** One exercise of a completed workout, with its sets and work-set volume. */
+export type CompletedWorkoutDetailExercise = {
+  name: string
+  exerciseLibraryId: number | null
+  sets: CompletedWorkoutDetailSet[]
+  totalVolume: number
+}
+
+/** The full detail of one completed workout for the Training History detail view. */
+export type CompletedWorkoutDetail = {
+  id: number
+  completedAt: string
+  startedAt: string
+  dayName: string
+  planName: string | null
+  focus: string
+  durationSeconds: number | null
+  exerciseCount: number
+  setCount: number
+  totalVolume: number
+  bodyWeightKg: number | null
+  exercises: CompletedWorkoutDetailExercise[]
+}
+
+/** A workout detail together with its saved AI summary (null when none saved). */
+export type CompletedWorkoutDetailPayload = {
+  detail: CompletedWorkoutDetail
+  summary: WorkoutAiSummary | null
+}
+
+/**
  * A server state together with the moment it arrived. The screen ticks its
  * timers forward from `receivedAt` rather than tracking elapsed time itself, so
  * a reload or a resume always re-anchors to the database's clock.
@@ -537,6 +604,125 @@ export function useWorkoutSummary(workoutId: number | null): {
     } catch {
       setState({ status: 'error', message: SUMMARY_ERROR })
     }
+  }, [workoutId])
+
+  return { state, regenerate }
+}
+
+const HISTORY_LIST_ERROR = 'Could not load your training history.'
+
+/**
+ * The Training History list: the user's completed workouts, newest first, each
+ * with its saved AI highlights. Read-only — this never triggers an AI generation,
+ * so the list costs no OpenAI call however many workouts it holds.
+ */
+export function useCompletedWorkouts(): Loadable<CompletedWorkoutListItem[]> {
+  const [state, setState] = useState<Loadable<CompletedWorkoutListItem[]>>({
+    status: 'loading',
+  })
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    void (async () => {
+      try {
+        const res = await fetch('/api/workout/completed', {
+          credentials: 'include',
+          signal: controller.signal,
+        })
+        if (!res.ok) {
+          setState({
+            status: 'error',
+            message: await errorMessage(res, HISTORY_LIST_ERROR),
+          })
+          return
+        }
+        const data = (await res.json()) as {
+          workouts: CompletedWorkoutListItem[]
+        }
+        setState({ status: 'ready', data: data.workouts })
+      } catch (err) {
+        if (isAbort(err)) return
+        setState({ status: 'error', message: HISTORY_LIST_ERROR })
+      }
+    })()
+
+    return () => controller.abort()
+  }, [])
+
+  return state
+}
+
+const HISTORY_DETAIL_ERROR = 'Could not load this workout.'
+
+/**
+ * One completed workout in full — its exercises, its sets, and its saved AI
+ * summary — for the Training History detail view. The summary is whatever was
+ * cached at completion; opening the detail never regenerates it. `regenerate`
+ * is the only path that calls OpenAI, and only when the user asks for it.
+ */
+export function useCompletedWorkoutDetail(workoutId: number | null): {
+  state: Loadable<CompletedWorkoutDetailPayload>
+  regenerate: () => Promise<void>
+} {
+  const [state, setState] = useState<Loadable<CompletedWorkoutDetailPayload>>({
+    status: 'loading',
+  })
+
+  useEffect(() => {
+    if (workoutId === null) return
+    const controller = new AbortController()
+    setState({ status: 'loading' })
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/workout/completed/${workoutId}`, {
+          credentials: 'include',
+          signal: controller.signal,
+        })
+        if (res.status === 404 || res.status === 400) {
+          setState({ status: 'not-found' })
+          return
+        }
+        if (!res.ok) {
+          setState({
+            status: 'error',
+            message: await errorMessage(res, HISTORY_DETAIL_ERROR),
+          })
+          return
+        }
+        const data = (await res.json()) as CompletedWorkoutDetailPayload
+        setState({ status: 'ready', data })
+      } catch (err) {
+        if (isAbort(err)) return
+        setState({ status: 'error', message: HISTORY_DETAIL_ERROR })
+      }
+    })()
+
+    return () => controller.abort()
+  }, [workoutId])
+
+  /** Explicitly regenerates the saved summary — the only OpenAI call here. */
+  const regenerate = useCallback(async () => {
+    if (workoutId === null) return
+    const res = await fetch(`/api/workout/${workoutId}/summary/regenerate`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+    if (!res.ok) {
+      throw new Error(await errorMessage(res, SUMMARY_ERROR))
+    }
+    const data = (await res.json()) as { summary: WorkoutAiSummary }
+    // Graft the fresh summary onto the detail already on screen, leaving the
+    // exercises and sets untouched.
+    setState((current) =>
+      current.status === 'ready'
+        ? {
+            status: 'ready',
+            data: { ...current.data, summary: data.summary },
+          }
+        : current,
+    )
   }, [workoutId])
 
   return { state, regenerate }

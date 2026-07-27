@@ -486,7 +486,12 @@ function SummaryChips({
  * completed one sees the empty state rather than a screen of zeros pretending
  * to be a summary.
  */
-export default function StatsPanel() {
+export default function StatsPanel({
+  onOpenHistory,
+}: {
+  /** Opens the full Training History screen, when the shell provides it. */
+  onOpenHistory?: () => void
+}) {
   const stats = useStatsOverview()
 
   if (stats.status === 'loading') return <p className="subtitle">Loading…</p>
@@ -604,7 +609,18 @@ export default function StatsPanel() {
       </section>
 
       <section className="stats-section" aria-labelledby="stats-recent-heading">
-        <h3 id="stats-recent-heading">Recent workouts</h3>
+        <div className="stats-section-head">
+          <h3 id="stats-recent-heading">Recent workouts</h3>
+          {onOpenHistory && (
+            <button
+              type="button"
+              className="stats-section-link"
+              onClick={onOpenHistory}
+            >
+              Training History →
+            </button>
+          )}
+        </div>
         <ul className="stat-list">
           {recentWorkouts.map((workout) => (
             <RecentWorkoutRow key={workout.id} workout={workout} />

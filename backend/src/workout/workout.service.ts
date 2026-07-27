@@ -85,6 +85,9 @@ const HISTORY_WORKOUTS = 5;
  *  of this cap, so it bounds only the scrollable session list's payload. */
 const FULL_HISTORY_SESSIONS = 50;
 
+/** How many completed workouts the Training History list returns at once. */
+const COMPLETED_HISTORY_LIMIT = 100;
+
 /** Epley estimated one-rep max, or null when there is no load to estimate from
  *  (a bodyweight set at weight 0, or an empty set). Rounded to one decimal. */
 function estimatedOneRepMax(weight: number, reps: number): number | null {
@@ -261,6 +264,76 @@ export interface FullExerciseHistory {
   sessions: FullHistorySession[];
   /** The same sessions as trend points, oldest → newest for charting. */
   trend: HistoryTrendPoint[];
+}
+
+/**
+ * The saved AI highlights shown on a Training History row: the headline and a
+ * short summary read straight from the session's cached summary. Never generated
+ * on read — a workout with no saved summary reports null instead.
+ */
+export interface SavedWorkoutSummaryPreview {
+  headline: string;
+  summary: string;
+  assessment: string;
+  generatedAt: string;
+}
+
+/** One completed workout in the Training History list, newest first. */
+export interface CompletedWorkoutListItem {
+  id: number;
+  completedAt: string;
+  dayName: string;
+  /** The Training Builder plan this day belongs to, or null for a legacy day. */
+  planName: string | null;
+  /** Exercises the user actually logged a set on, not the ones the plan listed. */
+  exerciseCount: number;
+  setCount: number;
+  /** Σ weight × reps over the work sets. */
+  totalVolume: number;
+  durationSeconds: number | null;
+  bodyWeightKg: number | null;
+  /** The saved AI highlights, or null when none were generated for this workout. */
+  aiSummary: SavedWorkoutSummaryPreview | null;
+}
+
+/** One logged set in a Training History detail, with its effort markers. */
+export interface CompletedWorkoutDetailSet {
+  setNumber: number;
+  weight: number;
+  reps: number;
+  rir: number | null;
+  rpe: number | null;
+  isWarmup: boolean;
+}
+
+/** One exercise of a completed workout, with its sets and work-set volume. */
+export interface CompletedWorkoutDetailExercise {
+  name: string;
+  exerciseLibraryId: number | null;
+  sets: CompletedWorkoutDetailSet[];
+  /** Σ weight × reps over this exercise's work sets. */
+  totalVolume: number;
+}
+
+/**
+ * The full detail of one completed workout for the Training History detail view:
+ * its meta, its totals, and every exercise with the sets logged against it. The
+ * saved AI summary is fetched alongside this by the controller — read-only, so
+ * opening a detail never regenerates it.
+ */
+export interface CompletedWorkoutDetail {
+  id: number;
+  completedAt: string;
+  startedAt: string;
+  dayName: string;
+  planName: string | null;
+  focus: string;
+  durationSeconds: number | null;
+  exerciseCount: number;
+  setCount: number;
+  totalVolume: number;
+  bodyWeightKg: number | null;
+  exercises: CompletedWorkoutDetailExercise[];
 }
 
 interface SessionRow {
@@ -1306,6 +1379,209 @@ export class WorkoutService implements OnModuleInit {
       bestE1rm,
       sessions,
       trend,
+    };
+  }
+
+  /**
+   * The Training History list: the user's completed workouts, newest first, each
+   * with its totals and — read straight from the cached summary, never generated
+   * here — its saved AI highlights. Only completed workouts count; a workout with
+   * no saved summary reports `aiSummary: null` so the UI can offer to generate one
+   * from the detail rather than doing it on this read.
+   *
+   * Volume is over the work sets only, matching the AI summary's definition of
+   * volume; the exercise count is exercises actually trained, so a workout cut
+   * short reports what was done rather than what the plan listed.
+   */
+  async listCompletedWorkouts(
+    userId: number,
+  ): Promise<CompletedWorkoutListItem[]> {
+    const result = await this.db.query<{
+      id: number;
+      completed_at: Date;
+      duration_seconds: number | null;
+      day_name: string;
+      plan_name: string | null;
+      exercise_count: number;
+      set_count: number;
+      volume: number;
+      body_weight_kg: number | null;
+      ai_generated_at: Date | null;
+      ai_headline: string | null;
+      ai_summary: string | null;
+      ai_assessment: string | null;
+    }>(
+      `SELECT s.id,
+              s.completed_at,
+              EXTRACT(EPOCH FROM (s.completed_at - s.started_at))::int
+                AS duration_seconds,
+              COALESCE(d.day, td.name, 'Workout') AS day_name,
+              t.name AS plan_name,
+              (SELECT COUNT(DISTINCT ws.exercise_id) FROM workout_sets ws
+                WHERE ws.workout_session_id = s.id)::int AS exercise_count,
+              (SELECT COUNT(*) FROM workout_sets ws
+                WHERE ws.workout_session_id = s.id)::int AS set_count,
+              (SELECT COALESCE(SUM(ws.actual_weight * ws.actual_reps), 0)
+                 FROM workout_sets ws
+                WHERE ws.workout_session_id = s.id AND ws.is_warmup = false
+              )::float8 AS volume,
+              s.body_weight_kg::float8 AS body_weight_kg,
+              s.ai_summary_generated_at AS ai_generated_at,
+              s.ai_summary_json -> 'content' ->> 'headline' AS ai_headline,
+              COALESCE(
+                s.ai_summary_json -> 'content' ->> 'summary', s.ai_summary_text
+              ) AS ai_summary,
+              s.ai_summary_json -> 'content' ->> 'assessment' AS ai_assessment
+         FROM workout_sessions s
+         LEFT JOIN training_days d ON d.id = s.training_day_id
+         LEFT JOIN training_template_days td ON td.id = s.template_day_id
+         LEFT JOIN training_templates t ON t.id = td.template_id
+        WHERE s.user_id = $1 AND s.completed_at IS NOT NULL
+        ORDER BY s.completed_at DESC
+        LIMIT $2`,
+      [userId, COMPLETED_HISTORY_LIMIT],
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      completedAt: row.completed_at.toISOString(),
+      dayName: row.day_name,
+      planName: row.plan_name,
+      exerciseCount: row.exercise_count,
+      setCount: row.set_count,
+      totalVolume: Math.round(row.volume * 100) / 100,
+      durationSeconds: row.duration_seconds,
+      bodyWeightKg: row.body_weight_kg,
+      // A summary counts as saved only when it was generated and has a headline;
+      // a session whose generation failed stored nothing and reports null here.
+      aiSummary:
+        row.ai_generated_at && row.ai_headline
+          ? {
+              headline: row.ai_headline,
+              summary: row.ai_summary ?? '',
+              assessment: row.ai_assessment ?? 'first',
+              generatedAt: row.ai_generated_at.toISOString(),
+            }
+          : null,
+    }));
+  }
+
+  /**
+   * The full detail of one completed workout for the Training History detail
+   * view: its meta and totals, plus every exercise with the sets logged against
+   * it. Scoped to the owner, so an id from the URL cannot read another user's
+   * workout, and only completed workouts resolve — an in-progress one has no
+   * place in history. Returns null for an unknown/foreign/unfinished workout.
+   *
+   * The saved AI summary is fetched separately (read-only) by the controller, so
+   * opening a detail never regenerates it.
+   */
+  async getCompletedWorkoutDetail(
+    userId: number,
+    id: number,
+  ): Promise<CompletedWorkoutDetail | null> {
+    const metaResult = await this.db.query<{
+      id: number;
+      started_at: Date;
+      completed_at: Date;
+      duration_seconds: number | null;
+      day_name: string;
+      plan_name: string | null;
+      focus: string;
+      body_weight_kg: number | null;
+    }>(
+      `SELECT s.id, s.started_at, s.completed_at,
+              EXTRACT(EPOCH FROM (s.completed_at - s.started_at))::int
+                AS duration_seconds,
+              COALESCE(d.day, td.name, 'Workout') AS day_name,
+              t.name AS plan_name,
+              COALESCE(d.focus, t.name, '') AS focus,
+              s.body_weight_kg::float8 AS body_weight_kg
+         FROM workout_sessions s
+         LEFT JOIN training_days d ON d.id = s.training_day_id
+         LEFT JOIN training_template_days td ON td.id = s.template_day_id
+         LEFT JOIN training_templates t ON t.id = td.template_id
+        WHERE s.id = $1 AND s.user_id = $2
+          AND s.completed_at IS NOT NULL AND s.abandoned_at IS NULL`,
+      [id, userId],
+    );
+    const meta = metaResult.rows[0];
+    if (!meta) return null;
+
+    // Every set of the workout, joined to its exercise identity, in queue order
+    // then set order — so exercises and their sets read in the order performed.
+    const setsResult = await this.db.query<{
+      exercise_id: number;
+      position: number;
+      name: string;
+      exercise_library_id: number | null;
+      set_number: number;
+      weight: number;
+      reps: number;
+      rir: number | null;
+      rpe: number | null;
+      is_warmup: boolean;
+    }>(
+      `SELECT e.id AS exercise_id, e.position, e.name, e.exercise_library_id,
+              ws.set_number,
+              ws.actual_weight::float8 AS weight, ws.actual_reps AS reps,
+              ws.rir, ws.rpe::float8 AS rpe, ws.is_warmup
+         FROM workout_session_exercises e
+         JOIN workout_sets ws ON ws.exercise_id = e.id
+        WHERE e.session_id = $1
+        ORDER BY e.position, ws.set_number`,
+      [id],
+    );
+
+    const byExercise = new Map<number, CompletedWorkoutDetailExercise>();
+    let totalVolume = 0;
+    let setCount = 0;
+    for (const row of setsResult.rows) {
+      let exercise = byExercise.get(row.exercise_id);
+      if (!exercise) {
+        exercise = {
+          name: row.name,
+          exerciseLibraryId: row.exercise_library_id,
+          sets: [],
+          totalVolume: 0,
+        };
+        byExercise.set(row.exercise_id, exercise);
+      }
+      exercise.sets.push({
+        setNumber: row.set_number,
+        weight: row.weight,
+        reps: row.reps,
+        rir: row.rir,
+        rpe: row.rpe,
+        isWarmup: row.is_warmup,
+      });
+      setCount += 1;
+      // Warm-ups never count toward volume, mirroring the summary and stats.
+      if (!row.is_warmup) {
+        const volume = row.weight * row.reps;
+        exercise.totalVolume += volume;
+        totalVolume += volume;
+      }
+    }
+
+    const exercises = [...byExercise.values()].map((exercise) => ({
+      ...exercise,
+      totalVolume: Math.round(exercise.totalVolume * 100) / 100,
+    }));
+
+    return {
+      id: meta.id,
+      completedAt: meta.completed_at.toISOString(),
+      startedAt: meta.started_at.toISOString(),
+      dayName: meta.day_name,
+      planName: meta.plan_name,
+      focus: meta.focus,
+      durationSeconds: meta.duration_seconds,
+      exerciseCount: exercises.length,
+      setCount,
+      totalVolume: Math.round(totalVolume * 100) / 100,
+      bodyWeightKg: meta.body_weight_kg,
+      exercises,
     };
   }
 
