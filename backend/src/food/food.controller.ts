@@ -18,8 +18,10 @@ import { readSessionToken } from '../auth/cookie.util';
 import { SessionService } from '../auth/session.service';
 import type { Targets } from './food.nutrients';
 import {
+  validateAddFavouriteDto,
   validateAssistantChatDto,
   validateEntryDto,
+  validateFavouriteDto,
   validateParsePhotoDto,
   validateParseTextDto,
   validateTargetsDto,
@@ -29,6 +31,7 @@ import {
   type AssistantReply,
   type DayLog,
   type DraftItem,
+  type Favourite,
   type FoodEntry,
   type ParsedMeal,
 } from './food.service';
@@ -154,6 +157,87 @@ export class FoodController {
       throw new BadRequestException('Invalid entry id.');
     }
     await this.foodService.deleteEntry(user.id, Number(id));
+  }
+
+  // ── Favourites / saved foods ──────────────────────────────────────────────
+
+  /** The user's active favourites, optionally filtered by a search query. */
+  @Get('favourites')
+  async listFavourites(
+    @Query('search') search: unknown,
+    @Req() req: Request,
+  ): Promise<{ favourites: Favourite[] }> {
+    const user = await this.currentUser(req);
+    const query =
+      typeof search === 'string' && search.trim().length > 0
+        ? search.trim().slice(0, 100)
+        : null;
+    return { favourites: await this.foodService.listFavourites(user.id, query) };
+  }
+
+  /** Saves a favourite, from typed values or captured from an existing entry. */
+  @Post('favourites')
+  async createFavourite(
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<{ favourite: Favourite }> {
+    const user = await this.currentUser(req);
+    const input = validateFavouriteDto(body);
+    return { favourite: await this.foodService.createFavourite(user.id, input) };
+  }
+
+  /** Edits one of the user's favourites. 404 when it is not theirs. */
+  @Put('favourites/:id')
+  async updateFavourite(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<{ favourite: Favourite }> {
+    const user = await this.currentUser(req);
+    if (!ID_PATTERN.test(id)) {
+      throw new BadRequestException('Invalid favourite id.');
+    }
+    const input = validateFavouriteDto(body);
+    return {
+      favourite: await this.foodService.updateFavourite(
+        user.id,
+        Number(id),
+        input,
+      ),
+    };
+  }
+
+  /** Soft-deletes one of the user's favourites. 404 when it is not theirs. */
+  @Delete('favourites/:id')
+  @HttpCode(204)
+  async deleteFavourite(
+    @Param('id') id: string,
+    @Req() req: Request,
+  ): Promise<void> {
+    const user = await this.currentUser(req);
+    if (!ID_PATTERN.test(id)) {
+      throw new BadRequestException('Invalid favourite id.');
+    }
+    await this.foodService.deleteFavourite(user.id, Number(id));
+  }
+
+  /**
+   * Adds a favourite to the current day as a new entry, optionally scaling it to
+   * a different quantity. Returns the created entry and the day's fresh totals.
+   */
+  @Post('favourites/:id/add-today')
+  @HttpCode(200)
+  async addFavouriteToday(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<{ entry: FoodEntry; day: DayLog }> {
+    const user = await this.currentUser(req);
+    if (!ID_PATTERN.test(id)) {
+      throw new BadRequestException('Invalid favourite id.');
+    }
+    const { quantity } = validateAddFavouriteDto(body);
+    return this.foodService.addFavouriteToday(user.id, Number(id), quantity);
   }
 
   /**

@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import type { EntryInput } from '../food.service';
+import type { EntryInput, FavouriteInput } from '../food.service';
 import {
   CONFIDENCE_LEVELS,
   FOOD_SOURCES,
@@ -271,4 +271,43 @@ export function validateEntryDto(body: unknown): EntryInput {
     assumptions: validateAssumptions(obj.assumptions),
     notes: boundedString(obj.notes, 'Notes', NOTES_MAX),
   };
+}
+
+// ── Favourites ────────────────────────────────────────────────────────────────
+
+/** A positive integer entry id, or null. Matches the SERIAL id shape. */
+function optionalEntryId(value: unknown): number | null {
+  const n = optionalNumber(value, 'source_entry_id');
+  if (n === null) return null;
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new BadRequestException('Invalid source entry id.');
+  }
+  return n;
+}
+
+/** Validates a create/edit favourite payload into a clean FavouriteInput. */
+export function validateFavouriteDto(body: unknown): FavouriteInput {
+  const obj = requireObject(body);
+  const name = boundedString(obj.name, 'Name', NAME_MAX);
+  if (!name) {
+    throw new BadRequestException('A name is required.');
+  }
+  return {
+    name,
+    brand: boundedString(obj.brand, 'Brand', SHORT_TEXT_MAX),
+    quantity: optionalNumber(obj.quantity, 'Quantity'),
+    unit: boundedString(obj.unit, 'Unit', SHORT_TEXT_MAX),
+    nutrients: validateNutrients(obj.nutrients),
+    notes: boundedString(obj.notes, 'Notes', NOTES_MAX),
+    sourceEntryId: optionalEntryId(obj.source_entry_id),
+  };
+}
+
+/** Validates the optional quantity override when adding a favourite to today. */
+export function validateAddFavouriteDto(body: unknown): {
+  quantity: number | null;
+} {
+  if (body === undefined || body === null) return { quantity: null };
+  const obj = requireObject(body);
+  return { quantity: optionalNumber(obj.quantity, 'Quantity') };
 }

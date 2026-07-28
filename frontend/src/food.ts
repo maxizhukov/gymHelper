@@ -151,6 +151,31 @@ export type DayLog = {
   targets: Targets
 }
 
+/** A saved / favourite food: a reusable template the user adds to a day. */
+export type Favourite = {
+  id: number
+  name: string
+  brand: string | null
+  quantity: number | null
+  unit: string | null
+  nutrients: Nutrients
+  notes: string | null
+  sourceEntryId: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** The payload the favourite create/edit endpoints accept (snake_case). */
+export type FavouritePayload = {
+  name: string
+  brand: string | null
+  quantity: number | null
+  unit: string | null
+  nutrients: Nutrients
+  notes: string | null
+  source_entry_id: number | null
+}
+
 /** The payload the create/edit endpoints accept (snake_case, like the DB). */
 export type EntryPayload = {
   date: string | null
@@ -296,5 +321,79 @@ export async function deleteEntry(id: number): Promise<void> {
   })
   if (!res.ok && res.status !== 204) {
     throw new Error(await errorMessage(res, GENERIC_ERROR))
+  }
+}
+
+// ── Favourites ────────────────────────────────────────────────────────────────
+
+/** The user's active favourites, optionally filtered by a search query. */
+export async function fetchFavourites(search?: string): Promise<Favourite[]> {
+  const trimmed = search?.trim() ?? ''
+  const query = trimmed ? `?search=${encodeURIComponent(trimmed)}` : ''
+  return (
+    await getJson<{ favourites: Favourite[] }>(`/api/food/favourites${query}`)
+  ).favourites
+}
+
+export async function createFavourite(
+  payload: FavouritePayload,
+): Promise<Favourite> {
+  return (
+    await sendJson<{ favourite: Favourite }>(
+      '/api/food/favourites',
+      'POST',
+      payload,
+    )
+  ).favourite
+}
+
+export async function updateFavourite(
+  id: number,
+  payload: FavouritePayload,
+): Promise<Favourite> {
+  return (
+    await sendJson<{ favourite: Favourite }>(
+      `/api/food/favourites/${id}`,
+      'PUT',
+      payload,
+    )
+  ).favourite
+}
+
+export async function deleteFavourite(id: number): Promise<void> {
+  const res = await fetch(`/api/food/favourites/${id}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok && res.status !== 204) {
+    throw new Error(await errorMessage(res, GENERIC_ERROR))
+  }
+}
+
+/**
+ * Adds a favourite to the current day as a new entry, optionally scaling it to
+ * `quantity`. Returns the created entry and the day's refreshed log.
+ */
+export async function addFavouriteToday(
+  id: number,
+  quantity: number | null,
+): Promise<{ entry: FoodEntry; day: DayLog }> {
+  return await sendJson<{ entry: FoodEntry; day: DayLog }>(
+    `/api/food/favourites/${id}/add-today`,
+    'POST',
+    { quantity },
+  )
+}
+
+/** Builds a favourite payload capturing a saved entry's name and nutrition. */
+export function favouriteFromEntry(entry: FoodEntry): FavouritePayload {
+  return {
+    name: entry.foodName,
+    brand: entry.brand,
+    quantity: entry.quantity,
+    unit: entry.unit,
+    nutrients: entry.nutrients,
+    notes: entry.notes,
+    source_entry_id: entry.id,
   }
 }

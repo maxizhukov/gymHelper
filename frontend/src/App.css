@@ -2390,6 +2390,73 @@
   padding-top: 0.5rem;
 }
 
+/* ── Favourites / saved foods ────────────────────────────────────────────── */
+.food-fav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.food-fav-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 0.9rem 1rem;
+  background: var(--card);
+}
+
+.food-fav-main {
+  min-width: 0;
+}
+
+.food-fav-name {
+  margin: 0;
+  font-weight: 700;
+}
+
+.food-fav-macros {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.food-fav-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.food-fav-add {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.food-fav-qty {
+  width: 4.5rem;
+  padding: 0.5rem 0.6rem;
+  text-align: right;
+}
+
+.food-fav-empty {
+  border: 1px dashed var(--border-2);
+  border-radius: 18px;
+  padding: 1.5rem 1.25rem;
+  text-align: center;
+  background: var(--surface-2);
+}
+
+.food-fav-empty-title {
+  margin: 0 0 0.4rem;
+  font-weight: 700;
+}
+
 code {
   background: var(--surface-3);
   padding: 0.1em 0.3em;

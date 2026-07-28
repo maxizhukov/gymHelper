@@ -122,6 +122,36 @@ export interface DayLog {
   targets: Targets;
 }
 
+/**
+ * A saved / favourite food: a reusable template of nutrition values the user can
+ * add to any day as a fresh entry. It is never itself a daily log row — adding
+ * one creates a new `food_entries` row from these values, and editing the
+ * favourite never rewrites entries already logged from it.
+ */
+export interface Favourite {
+  id: number;
+  name: string;
+  brand: string | null;
+  quantity: number | null;
+  unit: string | null;
+  nutrients: Nutrients;
+  notes: string | null;
+  sourceEntryId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The fields the caller may supply when saving or editing a favourite. */
+export interface FavouriteInput {
+  name: string;
+  brand: string | null;
+  quantity: number | null;
+  unit: string | null;
+  nutrients: Nutrients;
+  notes: string | null;
+  sourceEntryId: number | null;
+}
+
 /** The fields the caller may supply when saving or editing an entry. */
 export interface EntryInput {
   date: string | null;
@@ -180,6 +210,20 @@ const ENTRY_SELECT = `
   raw_input,
   assumptions,
   notes,
+  created_at,
+  updated_at
+`;
+
+/** The columns read back for a favourite. */
+const FAVOURITE_SELECT = `
+  id,
+  name,
+  brand,
+  quantity,
+  unit,
+  ${NUTRIENT_KEYS.join(',\n  ')},
+  notes,
+  source_entry_id,
   created_at,
   updated_at
 `;
@@ -247,6 +291,39 @@ export class FoodService implements OnModuleInit {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )
     `);
+
+    // Saved / favourite foods: reusable templates the user can add to any day.
+    // Same nullable-NUMERIC nutrient columns as an entry so a favourite maps
+    // straight onto a new entry. `source_entry_id` remembers which logged item
+    // it was captured from but survives that entry's deletion (SET NULL), and a
+    // soft `is_active` flag keeps a delete from erasing history the user may
+    // have logged from it. The favourite is a template — never a daily row.
+    const favNutrientCols = NUTRIENT_KEYS.map(
+      (key) => `${key} NUMERIC CHECK (${key} IS NULL OR ${key} >= 0)`,
+    ).join(',\n        ');
+
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS food_favourites (
+        id              SERIAL PRIMARY KEY,
+        user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name            TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 200),
+        brand           TEXT,
+        quantity        NUMERIC CHECK (quantity IS NULL OR quantity >= 0),
+        unit            TEXT,
+        ${favNutrientCols},
+        notes           TEXT,
+        source_entry_id INTEGER REFERENCES food_entries(id) ON DELETE SET NULL,
+        is_active       BOOLEAN NOT NULL DEFAULT true,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+
+    // The only read is "this user's active favourites", so index exactly that.
+    await this.db.query(
+      `CREATE INDEX IF NOT EXISTS food_favourites_user_idx
+         ON food_favourites (user_id) WHERE is_active`,
+    );
   }
 
   // ── Reads ──────────────────────────────────────────────────────────────────
@@ -391,6 +468,203 @@ export class FoodService implements OnModuleInit {
     if (result.rowCount === 0) {
       throw new NotFoundException('Food entry not found.');
     }
+  }
+
+  // ── Favourites ──────────────────────────────────────────────────────────────
+
+  /** The user's active favourites, optionally filtered by a name/brand search. */
+  async listFavourites(
+    userId: number,
+    search: string | null,
+  ): Promise<Favourite[]> {
+    const params: unknown[] = [userId];
+    let filter = '';
+    if (search) {
+      params.push(`%${search}%`);
+      filter = ' AND (name ILIKE $2 OR brand ILIKE $2)';
+    }
+    const result = await this.db.query(
+      `SELECT ${FAVOURITE_SELECT}
+         FROM food_favourites
+        WHERE user_id = $1 AND is_active${filter}
+        ORDER BY lower(name), id`,
+      params,
+    );
+    return result.rows.map((row) => this.mapFavourite(row));
+  }
+
+  /** Saves a new favourite for the user and returns it as stored. */
+  async createFavourite(
+    userId: number,
+    input: FavouriteInput,
+  ): Promise<Favourite> {
+    const cols = [
+      'user_id',
+      'name',
+      'brand',
+      'quantity',
+      'unit',
+      ...NUTRIENT_KEYS,
+      'notes',
+      'source_entry_id',
+    ];
+    const values = this.favouriteValues(userId, input);
+    const placeholders = cols.map((_, i) => `$${i + 1}`);
+    const result = await this.db.query(
+      `INSERT INTO food_favourites (${cols.join(', ')})
+       VALUES (${placeholders.join(', ')})
+       RETURNING ${FAVOURITE_SELECT}`,
+      values,
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error('Could not save favourite.');
+    return this.mapFavourite(row);
+  }
+
+  /** Edits one of the user's favourites; 404 if it is not theirs. The source
+   * entry link is fixed at creation and never reassigned here. */
+  async updateFavourite(
+    userId: number,
+    id: number,
+    input: FavouriteInput,
+  ): Promise<Favourite> {
+    const cols = [
+      'name',
+      'brand',
+      'quantity',
+      'unit',
+      ...NUTRIENT_KEYS,
+      'notes',
+    ];
+    // $1 is the id and $2 the user_id; column values follow from $3.
+    const assignments = cols.map((col, i) => `${col} = $${i + 3}`);
+    // favouriteValues starts with userId and ends with sourceEntryId; the UPDATE
+    // touches neither, so drop both ends.
+    const all = this.favouriteValues(userId, input);
+    const colValues = all.slice(1, all.length - 1);
+    const result = await this.db.query(
+      `UPDATE food_favourites
+          SET ${assignments.join(', ')}, updated_at = now()
+        WHERE id = $1 AND user_id = $2 AND is_active
+        RETURNING ${FAVOURITE_SELECT}`,
+      [id, userId, ...colValues],
+    );
+    const row = result.rows[0];
+    if (!row) throw new NotFoundException('Favourite not found.');
+    return this.mapFavourite(row);
+  }
+
+  /** Soft-deletes one of the user's favourites; 404 if it is not theirs. Kept
+   * as a flag so entries already logged from it are never disturbed. */
+  async deleteFavourite(userId: number, id: number): Promise<void> {
+    const result = await this.db.query(
+      `UPDATE food_favourites SET is_active = false, updated_at = now()
+        WHERE id = $1 AND user_id = $2 AND is_active`,
+      [id, userId],
+    );
+    if (result.rowCount === 0) {
+      throw new NotFoundException('Favourite not found.');
+    }
+  }
+
+  /**
+   * Adds a favourite to the current day as a brand-new entry. The favourite is
+   * only a template: its stored nutrition is copied onto a fresh `food_entries`
+   * row, so later edits to either side never affect the other. An optional
+   * quantity scales the nutrients proportionally when the favourite carries a
+   * base serving amount to scale from. Returns the created entry and the day's
+   * refreshed totals.
+   */
+  async addFavouriteToday(
+    userId: number,
+    id: number,
+    quantity: number | null,
+  ): Promise<{ entry: FoodEntry; day: DayLog }> {
+    const fav = await this.getFavourite(userId, id);
+    const today = await this.currentDate();
+
+    let nutrients = fav.nutrients;
+    let qty = fav.quantity;
+    if (quantity !== null) {
+      qty = quantity;
+      if (fav.quantity !== null && fav.quantity > 0) {
+        const multiplier = quantity / fav.quantity;
+        if (multiplier !== 1) {
+          nutrients = {} as Nutrients;
+          for (const key of NUTRIENT_KEYS) {
+            const value = fav.nutrients[key];
+            nutrients[key] =
+              value === null ? null : Math.round(value * multiplier * 1000) / 1000;
+          }
+        }
+      }
+    }
+
+    const entry = await this.createEntry(userId, {
+      date: today,
+      time: null,
+      mealType: null,
+      foodName: fav.name,
+      brand: fav.brand,
+      quantity: qty,
+      unit: fav.unit,
+      nutrients,
+      source: 'manual',
+      confidence: null,
+      rawInput: null,
+      assumptions: [],
+      notes: fav.notes,
+    });
+    return { entry, day: await this.getDay(userId, today) };
+  }
+
+  /** Reads one of the user's active favourites; 404 if it is not theirs. */
+  private async getFavourite(userId: number, id: number): Promise<Favourite> {
+    const result = await this.db.query(
+      `SELECT ${FAVOURITE_SELECT}
+         FROM food_favourites
+        WHERE id = $1 AND user_id = $2 AND is_active`,
+      [id, userId],
+    );
+    const row = result.rows[0];
+    if (!row) throw new NotFoundException('Favourite not found.');
+    return this.mapFavourite(row);
+  }
+
+  /** Ordered values for a favourite insert, aligned with the column lists. */
+  private favouriteValues(userId: number, input: FavouriteInput): unknown[] {
+    return [
+      userId,
+      input.name,
+      input.brand,
+      input.quantity,
+      input.unit,
+      ...NUTRIENT_KEYS.map((key) => input.nutrients[key]),
+      input.notes,
+      input.sourceEntryId,
+    ];
+  }
+
+  private mapFavourite(row: Record<string, unknown>): Favourite {
+    const nutrients = {} as Nutrients;
+    for (const key of NUTRIENT_KEYS) {
+      nutrients[key] = this.num(row[key]);
+    }
+    return {
+      id: Number(row.id),
+      name: this.text(row.name),
+      brand: this.textOrNull(row.brand),
+      quantity: this.num(row.quantity),
+      unit: this.textOrNull(row.unit),
+      nutrients,
+      notes: this.textOrNull(row.notes),
+      sourceEntryId:
+        row.source_entry_id === null || row.source_entry_id === undefined
+          ? null
+          : Number(row.source_entry_id),
+      createdAt: this.isoDate(row.created_at),
+      updatedAt: this.isoDate(row.updated_at),
+    };
   }
 
   // ── Model-backed drafts ─────────────────────────────────────────────────────

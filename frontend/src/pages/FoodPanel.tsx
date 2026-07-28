@@ -4,7 +4,9 @@ import {
   MACRO_KEYS,
   MEAL_TYPES,
   NUTRIENT_META,
+  createFavourite,
   deleteEntry,
+  favouriteFromEntry,
   fetchDay,
   fetchToday,
   formatNutrient,
@@ -18,6 +20,7 @@ import {
 } from '../food'
 import AddFood from './food/AddFood'
 import EntryForm, { seedFromEntry } from './food/EntryForm'
+import Favourites from './food/Favourites'
 import NutritionAssistant from './food/NutritionAssistant'
 import TargetsForm from './food/TargetsForm'
 
@@ -30,7 +33,7 @@ import TargetsForm from './food/TargetsForm'
  * component keeps only the transient view state.
  */
 
-type View = 'day' | 'add' | 'targets'
+type View = 'day' | 'add' | 'targets' | 'favourites'
 
 /** Shifts a YYYY-MM-DD date by whole days without tripping over time zones. */
 function addDays(date: string, delta: number): string {
@@ -200,10 +203,12 @@ function EntryRow({
   entry,
   onEdit,
   onDelete,
+  onFavourite,
 }: {
   entry: FoodEntry
   onEdit: () => void
   onDelete: () => void
+  onFavourite: () => void
 }) {
   const quantity =
     entry.quantity !== null
@@ -224,6 +229,14 @@ function EntryRow({
           {formatNutrient(entry.nutrients.calories_kcal, 0)} kcal
         </p>
         <div className="food-entry-actions">
+          <button
+            type="button"
+            className="food-link-button"
+            onClick={onFavourite}
+            title="Save as favourite"
+          >
+            ★ Favourite
+          </button>
           <button type="button" className="food-link-button" onClick={onEdit}>
             Edit
           </button>
@@ -296,6 +309,17 @@ export default function FoodPanel() {
     }
   }
 
+  async function onFavourite(entry: FoodEntry) {
+    try {
+      await createFavourite(favouriteFromEntry(entry))
+      setToast(`Saved "${entry.foodName}" to favourites`)
+    } catch (err) {
+      setToast(
+        err instanceof Error ? err.message : 'Could not save favourite.',
+      )
+    }
+  }
+
   const currentDate = date ?? today
 
   if (view === 'add') {
@@ -311,6 +335,28 @@ export default function FoodPanel() {
           onEntrySaved={() => {
             reload()
             setToast('Saved to today')
+          }}
+          onDone={() => {
+            setView('day')
+            reload()
+          }}
+        />
+      </div>
+    )
+  }
+
+  if (view === 'favourites') {
+    return (
+      <div className="food">
+        {toast && (
+          <p className="food-toast" role="status">
+            {toast}
+          </p>
+        )}
+        <Favourites
+          onAdded={(entry) => {
+            reload()
+            setToast(`Added "${entry.foodName}" to today`)
           }}
           onDone={() => {
             setView('day')
@@ -395,6 +441,13 @@ export default function FoodPanel() {
             <button
               type="button"
               className="nav-button food-button-secondary"
+              onClick={() => setView('favourites')}
+            >
+              ★ Saved
+            </button>
+            <button
+              type="button"
+              className="nav-button food-button-secondary"
               onClick={() => setView('targets')}
             >
               Targets
@@ -475,6 +528,7 @@ export default function FoodPanel() {
                             entry={entry}
                             onEdit={() => setEditingId(entry.id)}
                             onDelete={() => onDelete(entry)}
+                            onFavourite={() => onFavourite(entry)}
                           />
                         ),
                       )}
