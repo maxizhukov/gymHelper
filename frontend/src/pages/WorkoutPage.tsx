@@ -42,6 +42,7 @@ import {
   type Improvement,
   type WorkoutAiSummary,
   type WorkoutAssessment,
+  type WorkoutExercise,
   type WorkoutState,
 } from '../workout'
 
@@ -272,6 +273,19 @@ function ActiveWorkout({
   const overRest = restOverSeconds(anchored)
   const upNext = nextUp(workout)
 
+  // During the last two working sets of the current exercise, show what comes
+  // next so the equipment for it can be readied. Only while logging a set (not
+  // resting), only when there genuinely is a next exercise in the session's
+  // order, and only for exercises with at least two planned sets — fewer makes
+  // "last two sets" meaningless. Derived from the state the server sent, so it
+  // updates on its own as the cursor moves and never touches the set inputs.
+  const nextExercise: WorkoutExercise | null =
+    workout.phase === 'set' &&
+    workout.setsPerExercise >= 2 &&
+    workout.setsPerExercise - workout.setNumber < 2
+      ? (workout.exercises[workout.exerciseIndex + 1] ?? null)
+      : null
+
   return (
     <main className="app workout">
       <header className="workout-header">
@@ -371,6 +385,16 @@ function ActiveWorkout({
               <p className="workout-stat-value">{workout.targetReps}</p>
             </div>
           </div>
+
+          {/* Only on the last couple of sets, and never for the last exercise:
+              a compact heads-up so the next machine can be readied. */}
+          {nextExercise && (
+            <NextExercisePreview
+              exercise={nextExercise}
+              targetSets={workout.setsPerExercise}
+              targetReps={workout.targetReps}
+            />
+          )}
 
           {/* Collapsed by default: it answers "what weight today?" in one tap,
               and costs no vertical space until it is asked. */}
@@ -594,6 +618,103 @@ function ExerciseInfoPanel({
         {exercise && <ExerciseInfoDetail exercise={exercise} />}
       </Collapsible.Panel>
     </Collapsible.Root>
+  )
+}
+
+/**
+ * A compact, non-intrusive glass card naming the exercise that comes next in the
+ * session's order — shown only on the last sets of the current one. The name and
+ * planned sets/reps come straight from the workout state; the thumbnail and
+ * muscle group are resolved from the library when the next exercise carries a
+ * library id, and simply left out when it does not or has not loaded yet.
+ */
+function NextExercisePreview({
+  exercise,
+  targetSets,
+  targetReps,
+}: {
+  exercise: WorkoutExercise
+  targetSets: number
+  targetReps: number
+}) {
+  if (exercise.exerciseLibraryId === null) {
+    return (
+      <NextExercisePreviewCard
+        name={exercise.name}
+        targetSets={targetSets}
+        targetReps={targetReps}
+      />
+    )
+  }
+  return (
+    <NextExercisePreviewResolved
+      name={exercise.name}
+      exerciseLibraryId={exercise.exerciseLibraryId}
+      targetSets={targetSets}
+      targetReps={targetReps}
+    />
+  )
+}
+
+/** Resolves the next exercise's thumbnail and muscle group, then renders the
+ *  card — the details are optional, so it shows as soon as the name is known and
+ *  fills in the rest when the (cached) detail lands. */
+function NextExercisePreviewResolved({
+  name,
+  exerciseLibraryId,
+  targetSets,
+  targetReps,
+}: {
+  name: string
+  exerciseLibraryId: number
+  targetSets: number
+  targetReps: number
+}) {
+  const state = useExerciseDetail(exerciseLibraryId)
+  const detail = state.status === 'ready' ? state.data : null
+  return (
+    <NextExercisePreviewCard
+      name={name}
+      thumbnailUrl={detail?.thumbnailUrl ?? null}
+      meta={detail?.muscleGroup ?? detail?.category ?? null}
+      targetSets={targetSets}
+      targetReps={targetReps}
+    />
+  )
+}
+
+function NextExercisePreviewCard({
+  name,
+  thumbnailUrl = null,
+  meta = null,
+  targetSets,
+  targetReps,
+}: {
+  name: string
+  thumbnailUrl?: string | null
+  meta?: string | null
+  targetSets: number
+  targetReps: number
+}) {
+  return (
+    <aside className="workout-next-preview glass" aria-label="Next exercise">
+      {thumbnailUrl && (
+        <img
+          className="workout-next-preview-thumb"
+          src={thumbnailUrl}
+          alt=""
+          loading="lazy"
+        />
+      )}
+      <div className="workout-next-preview-text">
+        <p className="workout-next-preview-label">Up next</p>
+        <p className="workout-next-preview-name">{name}</p>
+        <p className="workout-next-preview-meta">
+          {meta ? `${meta} · ` : ''}
+          {targetSets} × {targetReps}
+        </p>
+      </div>
+    </aside>
   )
 }
 
