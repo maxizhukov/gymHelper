@@ -271,11 +271,12 @@ export class WorkoutController {
     @Req() req: Request,
   ): Promise<{ workout: WorkoutState }> {
     const user = await this.currentUser(req);
-    const { dayId } = validateStartTemplateDayDto(body);
+    const { dayId, selections } = validateStartTemplateDayDto(body);
     return {
       workout: await this.workoutService.startWorkoutFromTemplateDay(
         user.id,
         dayId,
+        selections,
       ),
     };
   }

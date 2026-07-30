@@ -70,6 +70,12 @@ export interface ExerciseMetric {
   previousBest: BestSet | null;
   /** current − previous volume, or null when this exercise is new this day. */
   volumeDelta: number | null;
+  /**
+   * True when this exercise was an intentional alternative/substitution for its
+   * slot this session. A substituted exercise with no previous comparison is a
+   * deliberate rotation, never failed progress — the model is told as much.
+   */
+  wasSubstituted: boolean;
 }
 
 /** The deterministic numbers behind the summary — the visual data the UI charts. */
@@ -124,6 +130,8 @@ interface SetRow {
   sid: number;
   lib_id: number | null;
   name: string;
+  /** True when this exercise was an intentional alternative for its slot. */
+  substituted: boolean;
   weight: number;
   reps: number;
   is_warmup: boolean;
@@ -137,6 +145,8 @@ interface ExerciseAgg {
   volume: number;
   reps: number;
   best: BestSet | null;
+  /** True when the movement was chosen as an alternative for its slot. */
+  substituted: boolean;
 }
 
 /** Aggregates for one whole session. */
@@ -312,6 +322,7 @@ export class AiWorkoutSummaryService {
       `SELECT ws.workout_session_id AS sid,
               e.exercise_library_id AS lib_id,
               e.name AS name,
+              e.selected_from_alternatives AS substituted,
               ws.actual_weight::float8 AS weight,
               ws.actual_reps AS reps,
               ws.is_warmup AS is_warmup,
@@ -367,6 +378,7 @@ export class AiWorkoutSummaryService {
         previousVolume: prev ? round2(prev.volume) : null,
         previousBest: prev?.best ?? null,
         volumeDelta: prev ? round2(ex.volume - prev.volume) : null,
+        wasSubstituted: ex.substituted,
       });
     }
 
@@ -458,9 +470,10 @@ export class AiWorkoutSummaryService {
     const key = row.lib_id !== null ? `lib:${row.lib_id}` : `name:${row.name}`;
     let ex = agg.exercises.get(key);
     if (!ex) {
-      ex = { name: row.name, volume: 0, reps: 0, best: null };
+      ex = { name: row.name, volume: 0, reps: 0, best: null, substituted: false };
       agg.exercises.set(key, ex);
     }
+    if (row.substituted) ex.substituted = true;
     ex.volume += volume;
     ex.reps += row.reps;
     if (!ex.best || e1rm > ex.best.e1rm) {
@@ -504,7 +517,10 @@ export class AiWorkoutSummaryService {
       note:
         'All comparisons below are against the SAME training day only ' +
         '(previous and last few sessions of this exact day). Never compare to ' +
-        'other training days.',
+        'other training days. An exercise with "wasSubstituted": true is an ' +
+        'intentional alternative the user chose for its slot this session; if it ' +
+        'has no previous comparison, that is a deliberate rotation, NOT failed ' +
+        'progress or a decline — frame it as a swapped-in variation.',
       ...metrics,
     };
 
@@ -556,7 +572,10 @@ export class AiWorkoutSummaryService {
       'Never compare to a different training day. If isFirstSession is true, give ' +
       'a first-session baseline summary (nothing to compare yet) and set ' +
       '"assessment" to "first". If weight is 0 or missing for an exercise, reason ' +
-      'about reps instead of volume. Keep every field short and mobile-readable.\n' +
+      'about reps instead of volume. An exercise with "wasSubstituted": true is an ' +
+      'intentional alternative for its slot this session — treat a missing ' +
+      'previous comparison for it as a deliberate rotation, never as a decline or ' +
+      'failed progress. Keep every field short and mobile-readable.\n' +
       'Reply with STRICT JSON and no prose outside it:\n' +
       '{"assessment": "better"|"similar"|"worse"|"first", "headline": string (<=8 ' +
       'words), "summary": string (2-4 short sentences comparing to the previous ' +

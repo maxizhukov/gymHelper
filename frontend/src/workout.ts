@@ -310,14 +310,22 @@ export function startWorkout(slug: string): Promise<AnchoredWorkout> {
   return post('start', { slug })
 }
 
+/** One per-slot substitution choice, sent when starting a template-day workout. */
+export type SlotSelection = {
+  templateDayExerciseId: number
+  exerciseLibraryId: number
+}
+
 /**
  * Starts a workout from a Training Builder day. Rejects if one is already in
- * progress, or if the day has no active exercises.
+ * progress, or if the day has no active exercises. `selections` carries the
+ * per-slot substitution choices; a slot without a choice uses its main exercise.
  */
 export function startWorkoutFromTemplateDay(
   dayId: number,
+  selections: SlotSelection[] = [],
 ): Promise<AnchoredWorkout> {
-  return post('start-template-day', { dayId })
+  return post('start-template-day', { dayId, selections })
 }
 
 /** Optional effort markers a set may carry. All optional; warmup defaults off. */

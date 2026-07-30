@@ -537,6 +537,29 @@ export class WorkoutService implements OnModuleInit {
            REFERENCES exercise_library(id) ON DELETE SET NULL`,
     );
 
+    // Exercise-slot substitution provenance, recorded when a workout is started
+    // from a Training Builder day whose slot offered alternatives. `exercise_library_id`
+    // above already holds the *actual* movement chosen for this session — so
+    // history, weight recommendations, and summaries all resolve to the exercise
+    // that was really performed. These three columns only remember the choice:
+    //   - planned_template_day_exercise_id: the slot this exercise came from (its
+    //     substitution group), nulled if the slot is later deleted.
+    //   - selected_from_alternatives: true when the chosen movement was an
+    //     alternative rather than the slot's main exercise — the AI summary reads
+    //     this to treat the swap as intentional, never as failed progress.
+    //   - original_planned_exercise_library_id: the slot's main (default) library
+    //     movement, so the substitution can be shown as "instead of X".
+    // All nullable/defaulted and added after the table shipped, so existing rows
+    // read null / false and behave exactly as before.
+    await this.db.query(`
+      ALTER TABLE workout_session_exercises
+        ADD COLUMN IF NOT EXISTS planned_template_day_exercise_id INTEGER
+          REFERENCES training_template_day_exercises(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS selected_from_alternatives BOOLEAN NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS original_planned_exercise_library_id INTEGER
+          REFERENCES exercise_library(id) ON DELETE SET NULL
+    `);
+
     // The AI weight recommendation for this exercise, generated once when the
     // workout starts and shown under the exercise name while training. Cached on
     // the exercise row so OpenAI is called once per workout, never again as the
@@ -1696,12 +1719,21 @@ export class WorkoutService implements OnModuleInit {
    * workout is fixed even if the template is edited mid-session, and every set
    * logged resolves back to its library movement for history.
    *
+   * A slot that offers alternatives may be substituted this session: `selections`
+   * maps a slot (its `training_template_day_exercises.id`) to the library
+   * movement chosen for it — the slot's main exercise or one of its active
+   * alternatives. A slot without a selection defaults to its main exercise. The
+   * chosen movement becomes the snapshotted `exercise_library_id`, so history,
+   * weight recommendations, and summaries all follow the exercise that is really
+   * performed; the substitution provenance is recorded alongside it.
+   *
    * The day must belong to a template the user owns; the partial unique index
    * rejects a second concurrent start.
    */
   async startWorkoutFromTemplateDay(
     userId: number,
     dayId: number,
+    selections: { templateDayExerciseId: number; exerciseLibraryId: number }[] = [],
   ): Promise<WorkoutState> {
     const dayResult = await this.db.query<{ id: number }>(
       `SELECT td.id
@@ -1714,26 +1746,105 @@ export class WorkoutService implements OnModuleInit {
       throw new NotFoundException('Training day not found.');
     }
 
-    // Active exercises only, in their builder order, resolved to the library's
-    // current name. A removed (deactivated) exercise is excluded here, but its
-    // past sets still live under its library id.
-    const exercisesResult = await this.db.query<{
+    // Active slots only, in their builder order, with the main library id.
+    // A removed (deactivated) slot is excluded here, but its past sets still
+    // live under its library id.
+    const slotsResult = await this.db.query<{
+      id: number;
       exercise_library_id: number;
-      name: string;
     }>(
-      `SELECT tde.exercise_library_id, el.name
+      `SELECT tde.id, tde.exercise_library_id
          FROM training_template_day_exercises tde
-         JOIN exercise_library el ON el.id = tde.exercise_library_id
         WHERE tde.day_id = $1 AND tde.is_active = true
         ORDER BY tde.position, tde.id`,
       [dayId],
     );
-    const exercises = exercisesResult.rows;
-    if (exercises.length === 0) {
+    const slots = slotsResult.rows;
+    if (slots.length === 0) {
       throw new BadRequestException(
         'This training day has no exercises to work through.',
       );
     }
+
+    // The active alternatives available for these slots, so a selection can be
+    // validated against exactly what the slot offers. Slot ids are the day's own.
+    const slotIds = slots.map((slot) => Number(slot.id));
+    const alternativesResult = await this.db.query<{
+      template_day_exercise_id: number;
+      exercise_library_id: number;
+    }>(
+      `SELECT template_day_exercise_id, exercise_library_id
+         FROM training_template_day_exercise_alternatives
+        WHERE template_day_exercise_id = ANY($1::int[]) AND is_active = true`,
+      [slotIds],
+    );
+    const allowedBySlot = new Map<number, Set<number>>();
+    for (const slot of slots) {
+      allowedBySlot.set(Number(slot.id), new Set([Number(slot.exercise_library_id)]));
+    }
+    for (const alt of alternativesResult.rows) {
+      allowedBySlot
+        .get(Number(alt.template_day_exercise_id))
+        ?.add(Number(alt.exercise_library_id));
+    }
+
+    // Which movement the user chose per slot; the last selection for a slot wins.
+    const selectionBySlot = new Map<number, number>();
+    for (const selection of selections) {
+      selectionBySlot.set(
+        selection.templateDayExerciseId,
+        selection.exerciseLibraryId,
+      );
+    }
+
+    // Resolve each slot to the movement to perform: the chosen one when valid,
+    // else the slot's main exercise. An invalid choice (not the main and not an
+    // active alternative of that slot) is rejected rather than silently ignored.
+    const chosen: {
+      slotId: number;
+      libraryId: number;
+      mainLibraryId: number;
+      substituted: boolean;
+    }[] = [];
+    for (const slot of slots) {
+      const slotId = Number(slot.id);
+      const mainLibraryId = Number(slot.exercise_library_id);
+      const requested = selectionBySlot.get(slotId);
+      let libraryId = mainLibraryId;
+      if (requested !== undefined && requested !== mainLibraryId) {
+        if (!allowedBySlot.get(slotId)?.has(requested)) {
+          throw new BadRequestException(
+            'A chosen alternative is not offered for its exercise slot.',
+          );
+        }
+        libraryId = requested;
+      }
+      chosen.push({
+        slotId,
+        libraryId,
+        mainLibraryId,
+        substituted: libraryId !== mainLibraryId,
+      });
+    }
+
+    // Resolve the display name of every chosen movement from the library in one
+    // query, keyed by id, so each queue row snapshots the current name.
+    const chosenIds = [...new Set(chosen.map((entry) => entry.libraryId))];
+    const namesResult = await this.db.query<{ id: number; name: string }>(
+      'SELECT id, name FROM exercise_library WHERE id = ANY($1::int[])',
+      [chosenIds],
+    );
+    const nameById = new Map<number, string>(
+      namesResult.rows.map((row) => [Number(row.id), row.name]),
+    );
+
+    const exercises = chosen.map((entry) => ({
+      exercise_library_id: entry.libraryId,
+      name: nameById.get(entry.libraryId) ?? 'Exercise',
+      planned_template_day_exercise_id: entry.slotId,
+      original_planned_exercise_library_id: entry.mainLibraryId,
+      selected_from_alternatives: entry.substituted,
+    }));
 
     const config = await this.trainingConfig.getConfig(userId);
 
@@ -1761,10 +1872,21 @@ export class WorkoutService implements OnModuleInit {
         for (const [position, exercise] of exercises.entries()) {
           const row = await client.query<{ id: number }>(
             `INSERT INTO workout_session_exercises
-               (session_id, position, exercise_library_id, name)
-             VALUES ($1, $2, $3, $4)
+               (session_id, position, exercise_library_id, name,
+                planned_template_day_exercise_id,
+                original_planned_exercise_library_id,
+                selected_from_alternatives)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
              RETURNING id`,
-            [id, position, exercise.exercise_library_id, exercise.name],
+            [
+              id,
+              position,
+              exercise.exercise_library_id,
+              exercise.name,
+              exercise.planned_template_day_exercise_id,
+              exercise.original_planned_exercise_library_id,
+              exercise.selected_from_alternatives,
+            ],
           );
           if (position === 0) {
             firstExerciseId = row.rows[0]?.id;

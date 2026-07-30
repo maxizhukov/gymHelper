@@ -38,6 +38,21 @@ export interface TemplateSummary {
   name: string;
 }
 
+/**
+ * One alternative (substitution) offered for an exercise slot, resolved against
+ * the library for display. Choosing it in the workout preview swaps the slot's
+ * actual movement for this one, this session only.
+ */
+export interface TemplateDayExerciseAlternative {
+  /** The row id in `training_template_day_exercise_alternatives`. */
+  id: number;
+  exerciseLibraryId: number;
+  name: string;
+  category: string | null;
+  muscleGroup: string | null;
+  sortOrder: number;
+}
+
 /** One exercise placed on a day, resolved against the library for display. */
 export interface TemplateDayExercise {
   /** The row id in `training_template_day_exercises`. */
@@ -47,6 +62,11 @@ export interface TemplateDayExercise {
   category: string | null;
   muscleGroup: string | null;
   position: number;
+  /**
+   * Active alternatives the user can rotate into this slot before starting a
+   * workout, in their chosen order. Empty when the slot is a fixed exercise.
+   */
+  alternatives: TemplateDayExerciseAlternative[];
 }
 
 /** A day with its active exercises, in order. */
@@ -82,6 +102,16 @@ interface DayExerciseRow {
   category: string | null;
   muscle_group: string | null;
   position: number;
+}
+
+interface AlternativeRow {
+  id: number;
+  template_day_exercise_id: number;
+  exercise_library_id: number;
+  name: string;
+  category: string | null;
+  muscle_group: string | null;
+  sort_order: number;
 }
 
 @Injectable()
@@ -144,6 +174,37 @@ export class TrainingBuilderService implements OnModuleInit {
     await this.db.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS training_template_day_exercises_day_library_idx
         ON training_template_day_exercises (day_id, exercise_library_id)
+    `);
+
+    // Alternatives (substitutions) offered for a single exercise slot. The slot
+    // (its `training_template_day_exercises` row) stays the default; each row
+    // here is one other library movement the user may rotate into that slot for
+    // a session. Deleting the slot removes its alternatives (ON DELETE CASCADE);
+    // exercise_library_id has no ON DELETE action for the same reason as the
+    // slot table — a referenced library row must not be deletable. `is_active`
+    // is the soft-remove flag, mirroring the slot table, so removing an
+    // alternative and adding it back reuses the row. `sort_order` is the display
+    // and choice order.
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS training_template_day_exercise_alternatives (
+        id                       SERIAL PRIMARY KEY,
+        template_day_exercise_id INTEGER NOT NULL REFERENCES training_template_day_exercises(id) ON DELETE CASCADE,
+        exercise_library_id      INTEGER NOT NULL REFERENCES exercise_library(id),
+        sort_order               INTEGER NOT NULL DEFAULT 0,
+        is_active                BOOLEAN NOT NULL DEFAULT true,
+        created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await this.db.query(
+      `CREATE INDEX IF NOT EXISTS training_template_day_exercise_alternatives_slot_idx
+         ON training_template_day_exercise_alternatives (template_day_exercise_id)`,
+    );
+    // At most one row per (slot, library exercise), so adding an alternative back
+    // reuses its row rather than piling up duplicates.
+    await this.db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS training_template_day_exercise_alternatives_slot_library_idx
+        ON training_template_day_exercise_alternatives (template_day_exercise_id, exercise_library_id)
     `);
   }
 
@@ -244,6 +305,33 @@ export class TrainingBuilderService implements OnModuleInit {
       [templateId],
     );
 
+    // Active alternatives for every slot on this template, in one query, keyed
+    // back onto their slot below so each exercise carries its own list.
+    const alternativesResult = await this.db.query<AlternativeRow>(
+      `SELECT alt.id, alt.template_day_exercise_id, alt.exercise_library_id,
+              alt.sort_order, el.name, el.category, el.muscle_group
+         FROM training_template_day_exercise_alternatives alt
+         JOIN training_template_day_exercises tde ON tde.id = alt.template_day_exercise_id
+         JOIN training_template_days d ON d.id = tde.day_id
+         JOIN exercise_library el ON el.id = alt.exercise_library_id
+        WHERE d.template_id = $1 AND alt.is_active = true AND tde.is_active = true
+        ORDER BY alt.template_day_exercise_id, alt.sort_order, alt.id`,
+      [templateId],
+    );
+    const byExercise = new Map<number, TemplateDayExerciseAlternative[]>();
+    for (const row of alternativesResult.rows) {
+      const list = byExercise.get(Number(row.template_day_exercise_id)) ?? [];
+      list.push({
+        id: Number(row.id),
+        exerciseLibraryId: Number(row.exercise_library_id),
+        name: row.name,
+        category: row.category,
+        muscleGroup: row.muscle_group,
+        sortOrder: Number(row.sort_order),
+      });
+      byExercise.set(Number(row.template_day_exercise_id), list);
+    }
+
     const byDay = new Map<number, TemplateDayExercise[]>();
     for (const row of exercisesResult.rows) {
       const list = byDay.get(row.day_id) ?? [];
@@ -254,6 +342,7 @@ export class TrainingBuilderService implements OnModuleInit {
         category: row.category,
         muscleGroup: row.muscle_group,
         position: Number(row.position),
+        alternatives: byExercise.get(Number(row.id)) ?? [],
       });
       byDay.set(row.day_id, list);
     }
@@ -404,6 +493,10 @@ export class TrainingBuilderService implements OnModuleInit {
         category: detail.category,
         muscleGroup: detail.muscle_group,
         position: Number(detail.position),
+        // A slot reactivated from history keeps its alternatives; the panel
+        // re-reads the whole template after this, so returning [] here is only
+        // the optimistic shape and never what ends up on screen.
+        alternatives: [],
       };
     });
   }
@@ -478,6 +571,160 @@ export class TrainingBuilderService implements OnModuleInit {
     });
   }
 
+  /**
+   * Adds an alternative (substitution) to an exercise slot. The library row must
+   * be active, and it may not duplicate the slot's own main exercise. As with
+   * `addExercise`, an alternative removed before is reactivated and sent to the
+   * end rather than piling up a second row, so its identity is kept.
+   */
+  async addAlternative(
+    userId: number,
+    dayExerciseId: number,
+    exerciseLibraryId: number,
+  ): Promise<TemplateDayExerciseAlternative> {
+    const slot = await this.requireOwnedDayExercise(userId, dayExerciseId);
+    if (Number(slot.exercise_library_id) === exerciseLibraryId) {
+      throw new BadRequestException(
+        'That exercise is already the main exercise for this slot.',
+      );
+    }
+
+    const libResult = await this.db.query<{
+      id: number;
+      name: string;
+      category: string | null;
+      muscle_group: string | null;
+      is_active: boolean;
+    }>(
+      'SELECT id, name, category, muscle_group, is_active FROM exercise_library WHERE id = $1',
+      [exerciseLibraryId],
+    );
+    const lib = libResult.rows[0];
+    if (!lib) {
+      throw new NotFoundException('Exercise not found in the library.');
+    }
+    if (!lib.is_active) {
+      throw new BadRequestException(
+        'That exercise is no longer available for new selections.',
+      );
+    }
+
+    return this.db.transaction(async (client) => {
+      const nextSort = await client.query<{ sort_order: number }>(
+        `SELECT COALESCE(max(sort_order) + 1, 0) AS sort_order
+           FROM training_template_day_exercise_alternatives
+          WHERE template_day_exercise_id = $1`,
+        [dayExerciseId],
+      );
+      const sortOrder = Number(nextSort.rows[0]?.sort_order ?? 0);
+
+      const upserted = await client.query<{ id: number }>(
+        `INSERT INTO training_template_day_exercise_alternatives
+           (template_day_exercise_id, exercise_library_id, sort_order, is_active)
+         VALUES ($1, $2, $3, true)
+         ON CONFLICT (template_day_exercise_id, exercise_library_id) DO UPDATE
+           SET is_active = true,
+               updated_at = now(),
+               sort_order = CASE
+                 WHEN training_template_day_exercise_alternatives.is_active
+                   THEN training_template_day_exercise_alternatives.sort_order
+                 ELSE EXCLUDED.sort_order
+               END
+         RETURNING id`,
+        [dayExerciseId, exerciseLibraryId, sortOrder],
+      );
+      const row = upserted.rows[0];
+      if (!row) {
+        throw new Error('Could not add the alternative.');
+      }
+
+      const resolved = await client.query<AlternativeRow>(
+        `SELECT alt.id, alt.template_day_exercise_id, alt.exercise_library_id,
+                alt.sort_order, el.name, el.category, el.muscle_group
+           FROM training_template_day_exercise_alternatives alt
+           JOIN exercise_library el ON el.id = alt.exercise_library_id
+          WHERE alt.id = $1`,
+        [row.id],
+      );
+      const detail = resolved.rows[0];
+      return {
+        id: Number(detail.id),
+        exerciseLibraryId: Number(detail.exercise_library_id),
+        name: detail.name,
+        category: detail.category,
+        muscleGroup: detail.muscle_group,
+        sortOrder: Number(detail.sort_order),
+      };
+    });
+  }
+
+  /**
+   * Removes an alternative from a slot. Soft delete: the row is deactivated, so
+   * it can be added back to the same identity later. Workout history is never
+   * touched — a session already snapshotted its chosen exercise by library id.
+   */
+  async removeAlternative(
+    userId: number,
+    dayExerciseId: number,
+    alternativeId: number,
+  ): Promise<void> {
+    await this.requireOwnedDayExercise(userId, dayExerciseId);
+    const result = await this.db.query(
+      `UPDATE training_template_day_exercise_alternatives
+          SET is_active = false, updated_at = now()
+        WHERE id = $1 AND template_day_exercise_id = $2 AND is_active = true`,
+      [alternativeId, dayExerciseId],
+    );
+    if ((result.rowCount ?? 0) === 0) {
+      throw new NotFoundException('Alternative not found on this exercise.');
+    }
+  }
+
+  /**
+   * Rewrites the order of a slot's active alternatives. The ids must be exactly
+   * the slot's current active alternatives — no more, no fewer — so the client
+   * cannot reorder against a stale view and leave positions ambiguous.
+   */
+  async reorderAlternatives(
+    userId: number,
+    dayExerciseId: number,
+    orderedIds: number[],
+  ): Promise<void> {
+    await this.requireOwnedDayExercise(userId, dayExerciseId);
+
+    await this.db.transaction(async (client) => {
+      const activeResult = await client.query<{ id: number }>(
+        `SELECT id FROM training_template_day_exercise_alternatives
+          WHERE template_day_exercise_id = $1 AND is_active = true`,
+        [dayExerciseId],
+      );
+      const active = new Set(activeResult.rows.map((row) => Number(row.id)));
+      if (
+        active.size !== orderedIds.length ||
+        !orderedIds.every((id) => active.has(id))
+      ) {
+        throw new BadRequestException(
+          'The alternative order must list exactly this slot’s current alternatives.',
+        );
+      }
+
+      // Park on negative sort orders first (always free), then land the finals,
+      // dodging any transient collision on the way — same trick as reorderExercises.
+      for (const [index, id] of orderedIds.entries()) {
+        await client.query(
+          'UPDATE training_template_day_exercise_alternatives SET sort_order = $2, updated_at = now() WHERE id = $1',
+          [id, -index - 1],
+        );
+      }
+      for (const [index, id] of orderedIds.entries()) {
+        await client.query(
+          'UPDATE training_template_day_exercise_alternatives SET sort_order = $2, updated_at = now() WHERE id = $1',
+          [id, index],
+        );
+      }
+    });
+  }
+
   private requireName(name: string): string {
     const trimmed = typeof name === 'string' ? name.trim() : '';
     if (trimmed.length === 0 || trimmed.length > NAME_MAX) {
@@ -513,5 +760,30 @@ export class TrainingBuilderService implements OnModuleInit {
     if ((result.rowCount ?? 0) === 0) {
       throw new NotFoundException('Training day not found.');
     }
+  }
+
+  /**
+   * Confirms the exercise slot belongs to a template the user owns and is still
+   * active, returning its main library id (needed to reject an alternative that
+   * duplicates the main exercise). 404 otherwise, so an id from the URL can never
+   * reach another user's slot.
+   */
+  private async requireOwnedDayExercise(
+    userId: number,
+    dayExerciseId: number,
+  ): Promise<{ exercise_library_id: number }> {
+    const result = await this.db.query<{ exercise_library_id: number }>(
+      `SELECT tde.exercise_library_id
+         FROM training_template_day_exercises tde
+         JOIN training_template_days d ON d.id = tde.day_id
+         JOIN training_templates t ON t.id = d.template_id
+        WHERE tde.id = $1 AND t.user_id = $2 AND tde.is_active = true`,
+      [dayExerciseId, userId],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new NotFoundException('Exercise not found on this day.');
+    }
+    return row;
   }
 }

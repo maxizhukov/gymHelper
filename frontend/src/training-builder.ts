@@ -18,6 +18,15 @@ export type TemplateSummary = {
   name: string
 }
 
+export type TemplateDayExerciseAlternative = {
+  id: number
+  exerciseLibraryId: number
+  name: string
+  category: string | null
+  muscleGroup: string | null
+  sortOrder: number
+}
+
 export type TemplateDayExercise = {
   id: number
   exerciseLibraryId: number
@@ -25,6 +34,8 @@ export type TemplateDayExercise = {
   category: string | null
   muscleGroup: string | null
   position: number
+  /** Active alternatives the user can rotate into this slot before a workout. */
+  alternatives: TemplateDayExerciseAlternative[]
 }
 
 export type TemplateDay = {
@@ -138,6 +149,45 @@ export async function reorderExercises(
   orderedIds: number[],
 ): Promise<void> {
   await send<void>(`/days/${dayId}/order`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ orderedIds }),
+  })
+}
+
+/** Adds an alternative (substitution) to an exercise slot. */
+export async function addAlternative(
+  dayExerciseId: number,
+  exerciseLibraryId: number,
+): Promise<TemplateDayExerciseAlternative> {
+  const data = await send<{ alternative: TemplateDayExerciseAlternative }>(
+    `/day-exercises/${dayExerciseId}/alternatives`,
+    {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ exerciseLibraryId }),
+    },
+  )
+  return data.alternative
+}
+
+/** Removes an alternative from a slot (soft delete — history is kept). */
+export async function removeAlternative(
+  dayExerciseId: number,
+  alternativeId: number,
+): Promise<void> {
+  await send<void>(
+    `/day-exercises/${dayExerciseId}/alternatives/${alternativeId}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** Reorders a slot's alternatives. */
+export async function reorderAlternatives(
+  dayExerciseId: number,
+  orderedIds: number[],
+): Promise<void> {
+  await send<void>(`/day-exercises/${dayExerciseId}/alternatives/order`, {
     method: 'PUT',
     headers: JSON_HEADERS,
     body: JSON.stringify({ orderedIds }),

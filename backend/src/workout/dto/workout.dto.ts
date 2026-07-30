@@ -124,13 +124,71 @@ export function validateStartWorkoutDto(body: unknown): { slug: string } {
   return { slug };
 }
 
-/** The Training Builder day to start a workout from. */
-export function validateStartTemplateDayDto(body: unknown): { dayId: number } {
-  const { dayId } = requireObject(body);
+/** The most exercise-slot substitution choices one start request may carry. */
+const MAX_SELECTIONS = 100;
+
+/** One per-slot substitution choice: which library movement to use for a slot. */
+export interface SlotSelectionDto {
+  templateDayExerciseId: number;
+  exerciseLibraryId: number;
+}
+
+/**
+ * The Training Builder day to start a workout from, plus optional per-slot
+ * substitution choices. `selections` is omitted or empty when nothing was
+ * rotated — every slot then defaults to its main exercise. Each entry names a
+ * slot and the library movement chosen for it; the service validates that the
+ * choice is one the slot actually offers.
+ */
+export function validateStartTemplateDayDto(body: unknown): {
+  dayId: number;
+  selections: SlotSelectionDto[];
+} {
+  const { dayId, selections } = requireObject(body);
   if (!Number.isInteger(dayId) || (dayId as number) < 1) {
     throw new BadRequestException('dayId must be a positive integer.');
   }
-  return { dayId: dayId as number };
+  return {
+    dayId: dayId as number,
+    selections: validateSelections(selections),
+  };
+}
+
+function validateSelections(value: unknown): SlotSelectionDto[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > MAX_SELECTIONS) {
+    throw new BadRequestException('selections must be an array of choices.');
+  }
+  const seen = new Set<number>();
+  return value.map((entry) => {
+    const { templateDayExerciseId, exerciseLibraryId } = requireObject(entry);
+    if (
+      !Number.isInteger(templateDayExerciseId) ||
+      (templateDayExerciseId as number) < 1
+    ) {
+      throw new BadRequestException(
+        'templateDayExerciseId must be a positive integer.',
+      );
+    }
+    if (
+      !Number.isInteger(exerciseLibraryId) ||
+      (exerciseLibraryId as number) < 1
+    ) {
+      throw new BadRequestException(
+        'exerciseLibraryId must be a positive integer.',
+      );
+    }
+    if (seen.has(templateDayExerciseId as number)) {
+      throw new BadRequestException(
+        'selections must not name the same slot twice.',
+      );
+    }
+    seen.add(templateDayExerciseId as number);
+    return {
+      templateDayExerciseId: templateDayExerciseId as number,
+      exerciseLibraryId: exerciseLibraryId as number,
+    };
+  });
 }
 
 /**

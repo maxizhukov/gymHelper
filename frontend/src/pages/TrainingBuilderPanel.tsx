@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useExerciseLibrary, type LibraryExercise } from '../exercise-library'
 import {
+  addAlternative,
   addExercise,
   createDay,
   createTemplate,
   deleteDay,
   deleteTemplate,
+  removeAlternative,
   removeExercise,
   renameDay,
   renameTemplate,
+  reorderAlternatives,
   reorderExercises,
   useTemplate,
   useTemplates,
@@ -328,11 +331,13 @@ function DayCard({
             <ExerciseRow
               key={exercise.id}
               exercise={exercise}
+              library={library}
               first={index === 0}
               last={index === day.exercises.length - 1}
               onUp={() => void move(index, -1)}
               onDown={() => void move(index, 1)}
               onRemove={() => void act(() => removeExercise(day.id, exercise.id))}
+              onAct={act}
             />
           ))}
         </ol>
@@ -550,65 +555,99 @@ function ExercisePicker({
   )
 }
 
-/** One exercise row: its name, reorder controls, and remove. */
+/** One exercise row: its name, reorder controls, remove, and its alternatives. */
 function ExerciseRow({
   exercise,
+  library,
   first,
   last,
   onUp,
   onDown,
   onRemove,
+  onAct,
 }: {
   exercise: TemplateDayExercise
+  library: LibraryExercise[]
   first: boolean
   last: boolean
   onUp: () => void
   onDown: () => void
   onRemove: () => void
+  /** Runs a mutation, then clears the error and re-reads the template. */
+  onAct: (action: () => Promise<unknown>) => Promise<void>
 }) {
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [altsOpen, setAltsOpen] = useState(false)
+  const alternatives = exercise.alternatives
 
   return (
     <li className="builder-exercise-row">
-      <span className="builder-exercise-name">{exercise.name}</span>
-      <span className="builder-exercise-actions">
-        {/* History follows the movement by its library id, so it opens the same
-            view wherever the exercise appears. Every builder row carries one. */}
+      <div className="builder-exercise-main">
+        <span className="builder-exercise-name">{exercise.name}</span>
+        <span className="builder-exercise-actions">
+          {/* History follows the movement by its library id, so it opens the same
+              view wherever the exercise appears. Every builder row carries one. */}
+          <button
+            type="button"
+            className="builder-icon builder-icon-history"
+            aria-label={`History for ${exercise.name}`}
+            onClick={() => setHistoryOpen(true)}
+          >
+            📊
+          </button>
+          <button
+            type="button"
+            className="builder-icon"
+            aria-label={`Move ${exercise.name} up`}
+            disabled={first}
+            onClick={onUp}
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            className="builder-icon"
+            aria-label={`Move ${exercise.name} down`}
+            disabled={last}
+            onClick={onDown}
+          >
+            ↓
+          </button>
+          <button
+            type="button"
+            className="builder-icon builder-icon-remove"
+            aria-label={`Remove ${exercise.name}`}
+            onClick={onRemove}
+          >
+            ✕
+          </button>
+        </span>
+      </div>
+
+      {/* Compact summary of the slot's alternatives, and a toggle into managing
+          them. The main exercise above is always the default; these are rotated
+          in per session from the workout preview. */}
+      <div className="builder-exercise-alts">
         <button
           type="button"
-          className="builder-icon builder-icon-history"
-          aria-label={`History for ${exercise.name}`}
-          onClick={() => setHistoryOpen(true)}
+          className="builder-alts-toggle"
+          aria-expanded={altsOpen}
+          onClick={() => setAltsOpen((open) => !open)}
         >
-          📊
+          {alternatives.length === 0
+            ? '+ Add alternatives'
+            : `Alternatives: ${alternatives.map((a) => a.name).join(', ')}`}
         </button>
-        <button
-          type="button"
-          className="builder-icon"
-          aria-label={`Move ${exercise.name} up`}
-          disabled={first}
-          onClick={onUp}
-        >
-          ↑
-        </button>
-        <button
-          type="button"
-          className="builder-icon"
-          aria-label={`Move ${exercise.name} down`}
-          disabled={last}
-          onClick={onDown}
-        >
-          ↓
-        </button>
-        <button
-          type="button"
-          className="builder-icon builder-icon-remove"
-          aria-label={`Remove ${exercise.name}`}
-          onClick={onRemove}
-        >
-          ✕
-        </button>
-      </span>
+
+        {altsOpen && (
+          <AlternativesManager
+            exercise={exercise}
+            library={library}
+            onAct={onAct}
+          />
+        )}
+      </div>
+
       <ExerciseHistoryModal
         open={historyOpen}
         onOpenChange={setHistoryOpen}
@@ -616,6 +655,109 @@ function ExerciseRow({
         exerciseLibraryId={exercise.exerciseLibraryId}
       />
     </li>
+  )
+}
+
+/**
+ * The manager for one slot's alternatives: the active alternatives with remove
+ * and reorder, plus an "Add alternative" picker. The picker excludes the slot's
+ * own main exercise and any alternative already added, so a movement can never
+ * be its own substitute or appear twice.
+ */
+function AlternativesManager({
+  exercise,
+  library,
+  onAct,
+}: {
+  exercise: TemplateDayExercise
+  library: LibraryExercise[]
+  onAct: (action: () => Promise<unknown>) => Promise<void>
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const alternatives = exercise.alternatives
+
+  const excluded = useMemo(
+    () =>
+      new Set<number>([
+        exercise.exerciseLibraryId,
+        ...alternatives.map((alt) => alt.exerciseLibraryId),
+      ]),
+    [exercise.exerciseLibraryId, alternatives],
+  )
+
+  /** Moves an alternative one place and persists the new order. */
+  async function move(index: number, direction: -1 | 1) {
+    const target = index + direction
+    if (target < 0 || target >= alternatives.length) return
+    const ids = alternatives.map((alt) => alt.id)
+    ;[ids[index], ids[target]] = [ids[target], ids[index]]
+    await onAct(() => reorderAlternatives(exercise.id, ids))
+  }
+
+  return (
+    <div className="builder-alts-panel">
+      {alternatives.length === 0 ? (
+        <p className="message builder-alts-empty">
+          No alternatives yet. Add one below to rotate it into this slot before a
+          workout.
+        </p>
+      ) : (
+        <ul className="builder-alts-list">
+          {alternatives.map((alt, index) => (
+            <li key={alt.id} className="builder-alts-item">
+              <span className="builder-alts-name">{alt.name}</span>
+              <span className="builder-alts-actions">
+                <button
+                  type="button"
+                  className="builder-icon"
+                  aria-label={`Move ${alt.name} up`}
+                  disabled={index === 0}
+                  onClick={() => void move(index, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="builder-icon"
+                  aria-label={`Move ${alt.name} down`}
+                  disabled={index === alternatives.length - 1}
+                  onClick={() => void move(index, 1)}
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  className="builder-icon builder-icon-remove"
+                  aria-label={`Remove alternative ${alt.name}`}
+                  onClick={() =>
+                    void onAct(() => removeAlternative(exercise.id, alt.id))
+                  }
+                >
+                  ✕
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {pickerOpen ? (
+        <ExercisePicker
+          library={library}
+          alreadyOn={excluded}
+          onAdd={(id) => onAct(() => addAlternative(exercise.id, id))}
+          onClose={() => setPickerOpen(false)}
+        />
+      ) : (
+        <button
+          type="button"
+          className="nav-button builder-add-toggle"
+          onClick={() => setPickerOpen(true)}
+        >
+          + Add alternative
+        </button>
+      )}
+    </div>
   )
 }
 

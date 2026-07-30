@@ -2648,11 +2648,17 @@ code {
 
 .builder-exercise-row {
   display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.builder-exercise-main {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid var(--border);
 }
 
 .builder-exercise-name {
@@ -2660,6 +2666,78 @@ code {
 }
 
 .builder-exercise-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+}
+
+/* ------------------------------------------------------------------ */
+/* Exercise-slot alternatives (substitutions)                          */
+/* ------------------------------------------------------------------ */
+
+.builder-exercise-alts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.builder-alts-toggle {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0.2rem 0.55rem;
+  border: 1px dashed var(--border-2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.builder-alts-toggle:hover {
+  color: var(--ink);
+  border-color: var(--accent, var(--border-2));
+}
+
+.builder-alts-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.builder-alts-empty {
+  margin: 0;
+}
+
+.builder-alts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.builder-alts-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.builder-alts-name {
+  color: var(--ink);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.builder-alts-actions {
   display: flex;
   gap: 0.35rem;
   flex: 0 0 auto;
@@ -3072,6 +3150,38 @@ code {
 .workout-preview-meta {
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+/* "instead of X" tag when a slot is rotated off its main exercise. */
+.workout-preview-swapped {
+  font-size: 0.75rem;
+  color: var(--accent, var(--muted));
+}
+
+/* The per-slot substitution chooser: a wrap of selectable pills. */
+.workout-preview-alts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.workout-preview-alt {
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.workout-preview-alt-selected {
+  color: var(--ink);
+  border-color: var(--accent, var(--ink));
+  background: var(--accent-soft, var(--surface));
+  font-weight: 600;
 }
 
 /* The per-exercise details fold: sits flush under the row, edge-to-edge in the card. */

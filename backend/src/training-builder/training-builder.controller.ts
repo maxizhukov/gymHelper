@@ -24,6 +24,7 @@ import {
   TrainingBuilderService,
   type TemplateDay,
   type TemplateDayExercise,
+  type TemplateDayExerciseAlternative,
   type TemplateDetail,
   type TemplateSummary,
 } from './training-builder.service';
@@ -179,6 +180,57 @@ export class TrainingBuilderController {
     const user = await this.currentUser(req);
     const { orderedIds } = validateReorderDto(body);
     await this.builder.reorderExercises(user.id, this.id(dayId), orderedIds);
+  }
+
+  /** Adds an alternative (substitution) to an exercise slot. */
+  @Post('day-exercises/:dayExerciseId/alternatives')
+  async addAlternative(
+    @Param('dayExerciseId') dayExerciseId: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<{ alternative: TemplateDayExerciseAlternative }> {
+    const user = await this.currentUser(req);
+    const { exerciseLibraryId } = validateAddExerciseDto(body);
+    return {
+      alternative: await this.builder.addAlternative(
+        user.id,
+        this.id(dayExerciseId),
+        exerciseLibraryId,
+      ),
+    };
+  }
+
+  /** Removes an alternative from a slot (soft delete — history is kept). */
+  @Delete('day-exercises/:dayExerciseId/alternatives/:alternativeId')
+  @HttpCode(204)
+  async removeAlternative(
+    @Param('dayExerciseId') dayExerciseId: string,
+    @Param('alternativeId') alternativeId: string,
+    @Req() req: Request,
+  ): Promise<void> {
+    const user = await this.currentUser(req);
+    await this.builder.removeAlternative(
+      user.id,
+      this.id(dayExerciseId),
+      this.id(alternativeId),
+    );
+  }
+
+  /** Reorders a slot's alternatives. */
+  @Put('day-exercises/:dayExerciseId/alternatives/order')
+  @HttpCode(204)
+  async reorderAlternatives(
+    @Param('dayExerciseId') dayExerciseId: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<void> {
+    const user = await this.currentUser(req);
+    const { orderedIds } = validateReorderDto(body);
+    await this.builder.reorderAlternatives(
+      user.id,
+      this.id(dayExerciseId),
+      orderedIds,
+    );
   }
 
   private id(value: string): number {
