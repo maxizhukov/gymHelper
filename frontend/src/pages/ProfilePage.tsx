@@ -19,6 +19,7 @@ type ConfigState = 'idle' | 'submitting' | 'success' | 'error'
  */
 export function ProfileContent() {
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [pwState, setPwState] = useState<ChangePwState>('idle')
@@ -300,6 +301,17 @@ export function ProfileContent() {
           {pwState === 'submitting' ? 'Saving…' : 'Change password'}
         </Button>
       </Form>
+
+      <Separator className="separator" />
+
+      {/* Hidden lab feature: a self-contained, cosmetic DNA scanner screen. */}
+      <Button
+        type="button"
+        className="btn-glass"
+        onClick={() => void navigate('/blood-dna')}
+      >
+        Blood DNA Analyzer
+      </Button>
 
       <Separator className="separator" />
 

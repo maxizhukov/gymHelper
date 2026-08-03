@@ -8,6 +8,7 @@ import {
 } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthProvider'
 import { useAuth } from './auth/useAuth'
+import BloodDnaAnalyzer from './pages/BloodDnaAnalyzer'
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
 import ProfilePage from './pages/ProfilePage'
@@ -67,6 +68,7 @@ function App() {
           {/* The id in the URL is what makes a reload mid-workout resume it. */}
           <Route path="/workout/:id" element={<WorkoutPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/blood-dna" element={<BloodDnaAnalyzer />} />
         </Route>
 
         {/* Unknown URL: fall back to the home route, which itself gates on auth. */}
