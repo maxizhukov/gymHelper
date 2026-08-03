@@ -19,24 +19,24 @@ type Slice = { name: string; pct: number; color: string }
 type Mode = 'idle' | 'scanning' | 'done'
 
 const SCAN_MESSAGES = [
-  'Collecting sample…',
-  'Sequencing DNA…',
-  'Comparing genomes…',
-  'Calculating ancestry…',
+  'Збір зразка…',
+  'Секвенування ДНК…',
+  'Порівняння геномів…',
+  'Визначення походження…',
 ]
 
 const OTHER_ETHNICITIES = [
-  'Belarusian',
-  'Polish',
-  'Tatar',
-  'Lithuanian',
-  'Slovak',
-  'Hungarian',
-  'Romanian',
-  'German',
-  'Czech',
-  'Jewish',
-  'Russian',
+  'Білорус',
+  'Поляк',
+  'Татарин',
+  'Литовець',
+  'Словак',
+  'Угорець',
+  'Румун',
+  'Німець',
+  'Чех',
+  'Єврей',
+  'Росіянин',
 ]
 
 /** Distinct-enough swatches; Ukrainian always gets the signature indigo. */
@@ -70,8 +70,8 @@ function shuffled<T>(list: T[]): T[] {
 function generateResult(forced: boolean): Slice[] {
   if (forced) {
     return [
-      { name: 'Jewish', pct: 90, color: SLICE_COLORS[4] },
-      { name: 'Ukrainian', pct: 10, color: SLICE_COLORS[0] },
+      { name: 'Єврей', pct: 90, color: SLICE_COLORS[4] },
+      { name: 'Українець', pct: 10, color: SLICE_COLORS[0] },
     ]
   }
 
@@ -96,7 +96,7 @@ function generateResult(forced: boolean): Slice[] {
   // Show the biggest contributors first for a tidy result list.
   others.sort((a, b) => b.pct - a.pct)
 
-  return [{ name: 'Ukrainian', pct: ukrainian, color: SLICE_COLORS[0] }, ...others]
+  return [{ name: 'Українець', pct: ukrainian, color: SLICE_COLORS[0] }, ...others]
 }
 
 /** Best-effort haptic tick; silently a no-op where vibration isn't supported. */
@@ -109,12 +109,12 @@ function haptic(pattern: number | number[]) {
 }
 
 const VITAL_DEFS = [
-  { key: 'hgb', label: 'Hemoglobin', unit: 'g/dL', min: 132, max: 168, scale: 10 },
-  { key: 'rbc', label: 'RBC', unit: 'M/µL', min: 42, max: 58, scale: 10 },
-  { key: 'wbc', label: 'WBC', unit: 'K/µL', min: 40, max: 110, scale: 10 },
-  { key: 'plt', label: 'Platelets', unit: 'K/µL', min: 150, max: 400, scale: 1 },
+  { key: 'hgb', label: 'Гемоглобін', unit: 'g/dL', min: 132, max: 168, scale: 10 },
+  { key: 'rbc', label: 'Еритроцити', unit: 'M/µL', min: 42, max: 58, scale: 10 },
+  { key: 'wbc', label: 'Лейкоцити', unit: 'K/µL', min: 40, max: 110, scale: 10 },
+  { key: 'plt', label: 'Тромбоцити', unit: 'K/µL', min: 150, max: 400, scale: 1 },
   { key: 'o2', label: 'SpO₂', unit: '%', min: 960, max: 1000, scale: 10 },
-  { key: 'bpm', label: 'Heart rate', unit: 'bpm', min: 60, max: 92, scale: 1 },
+  { key: 'bpm', label: 'Пульс', unit: 'bpm', min: 60, max: 92, scale: 1 },
 ] as const
 
 type Vitals = Record<string, number>
@@ -283,16 +283,16 @@ export default function BloodDnaAnalyzer() {
 
   return (
     <div className="screen">
-      <BackHeader title="Blood DNA Analyzer" onBack={() => void navigate(-1)} />
+      <BackHeader title="Аналізатор ДНК крові" onBack={() => void navigate(-1)} />
       <div className="screen-scroll has-header">
         <div className="bda">
           <div className="bda-eyebrow">
             <span className="bda-live-dot" aria-hidden="true" />
             {mode === 'scanning'
-              ? 'Analyzing sample'
+              ? 'Аналіз зразка'
               : mode === 'done'
-                ? 'Analysis complete'
-                : 'Genomic sequencer online'}
+                ? 'Аналіз завершено'
+                : 'Геномний секвенатор онлайн'}
           </div>
 
           {mode !== 'done' && (
@@ -313,11 +313,11 @@ export default function BloodDnaAnalyzer() {
                       <div className="bda-scanner-pct">
                         {Math.round(progress)}%
                       </div>
-                      <div className="bda-scanner-label">Scanning</div>
+                      <div className="bda-scanner-label">Сканування</div>
                     </>
                   ) : (
                     <>
-                      <div className="bda-scanner-label">Ready</div>
+                      <div className="bda-scanner-label">Готово</div>
                     </>
                   )}
                 </div>
@@ -390,11 +390,16 @@ export default function BloodDnaAnalyzer() {
                     onPointerCancel={onPressCancel}
                     onContextMenu={(e) => e.preventDefault()}
                   >
-                    Start Analysis
-                    <small>{holding ? 'Deep scan armed' : 'Tap to begin'}</small>
+                    Почати аналіз
+                    <small>
+                      {holding
+                        ? 'Глибоке сканування активовано'
+                        : 'Натисніть, щоб почати'}
+                    </small>
                   </button>
                   <p className="bda-hint">
-                    Place fingertip on the sensor. Hold for a deep genomic scan.
+                    Прикладіть палець до сенсора. Утримуйте для глибокого
+                    геномного сканування.
                   </p>
                 </>
               )}
@@ -405,7 +410,7 @@ export default function BloodDnaAnalyzer() {
             <div className="bda-result">
               <div className="bda-success">
                 <span className="bda-success-dot" aria-hidden="true" />
-                Analysis completed successfully
+                Аналіз успішно завершено
               </div>
 
               <div
@@ -450,25 +455,27 @@ export default function BloodDnaAnalyzer() {
 
               <dl className="bda-report">
                 <div>
-                  <dt>Report ID</dt>
+                  <dt>ID звіту</dt>
                   <dd>{report.id}</dd>
                 </div>
                 <div>
-                  <dt>Scan duration</dt>
-                  <dd>{(report.durationMs / 1000).toFixed(1)}s</dd>
+                  <dt>Тривалість аналізу</dt>
+                  <dd>{(report.durationMs / 1000).toFixed(1)} с</dd>
                 </div>
                 <div>
-                  <dt>Status</dt>
-                  <dd style={{ color: 'var(--bda-green, #4be0a8)' }}>Verified</dd>
+                  <dt>Статус</dt>
+                  <dd style={{ color: 'var(--bda-green, #4be0a8)' }}>
+                    Підтверджено
+                  </dd>
                 </div>
                 <div>
-                  <dt>Completed</dt>
+                  <dt>Завершено</dt>
                   <dd>{report.at}</dd>
                 </div>
               </dl>
 
               <button type="button" className="btn-primary" onClick={reset}>
-                Analyze Again
+                Повторити аналіз
               </button>
             </div>
           )}
