@@ -3142,6 +3142,13 @@ code {
   min-width: 0;
 }
 
+.workout-preview-move {
+  display: flex;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
 .workout-preview-name {
   font-weight: 600;
   color: var(--ink);

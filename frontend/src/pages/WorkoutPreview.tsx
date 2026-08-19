@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react'
 import { Collapsible } from '@base-ui/react/collapsible'
 import { useNavigate } from 'react-router-dom'
 import { useExerciseDetail } from '../exercise-library'
-import type {
-  TemplateDay,
-  TemplateDayExercise,
-  TemplateDayExerciseAlternative,
+import {
+  reorderExercises,
+  type TemplateDay,
+  type TemplateDayExercise,
+  type TemplateDayExerciseAlternative,
 } from '../training-builder'
 import { startWorkoutFromTemplateDay, type SlotSelection } from '../workout'
 import { ExerciseInfoDetail, hasExerciseInfo } from './ExerciseInfo'
@@ -20,6 +21,10 @@ import { ExerciseInfoDetail, hasExerciseInfo } from './ExerciseInfo'
  * picks the actual movement for each such slot this session, defaulting to the
  * slot's main exercise. The chosen movements are sent with "Start workout", and
  * only then does the backend create the session using them.
+ *
+ * The exercise order can also be rearranged here with the same up/down move
+ * used in the Training Builder. Each move persists immediately via the day's
+ * reorder endpoint, so the plan itself is updated (not just this session).
  *
  * The Start button owns the create call, disables itself while the request is in
  * flight, and navigates to the workout it created — so a double-tap cannot open
@@ -56,6 +61,30 @@ export default function WorkoutPreview({
   const chosenFor = (exercise: TemplateDayExercise): number =>
     chosen[exercise.id] ?? exercise.exerciseLibraryId
 
+  // The exercise order shown and started from. Starts as the day's saved
+  // order; each up/down move updates it locally and persists it to the day
+  // via the same reorder endpoint the Builder uses, so the plan itself keeps
+  // the new order (not just this session).
+  const [order, setOrder] = useState<TemplateDayExercise[]>(() => day.exercises)
+  const [reorderError, setReorderError] = useState('')
+
+  async function move(index: number, direction: -1 | 1) {
+    const target = index + direction
+    if (target < 0 || target >= order.length) return
+    const next = [...order]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    setOrder(next)
+    try {
+      await reorderExercises(day.id, next.map((exercise) => exercise.id))
+      setReorderError('')
+    } catch (err) {
+      setOrder(order)
+      setReorderError(
+        err instanceof Error ? err.message : 'Could not reorder exercises.',
+      )
+    }
+  }
+
   async function handleStart() {
     // Guard the create call: an empty day has nothing to start, and a request
     // already in flight must not be fired a second time by a double-tap.
@@ -65,7 +94,7 @@ export default function WorkoutPreview({
     try {
       // Only send slots that were actually rotated off their main exercise; a
       // slot left on its default needs no selection (the backend defaults it).
-      const selections: SlotSelection[] = day.exercises
+      const selections: SlotSelection[] = order
         .filter((exercise) => chosenFor(exercise) !== exercise.exerciseLibraryId)
         .map((exercise) => ({
           templateDayExerciseId: exercise.id,
@@ -110,7 +139,7 @@ export default function WorkoutPreview({
         </div>
       ) : (
         <ol className="workout-preview-list">
-          {day.exercises.map((exercise, index) => (
+          {order.map((exercise, index) => (
             <PreviewExerciseRow
               key={exercise.id}
               exercise={exercise}
@@ -119,9 +148,19 @@ export default function WorkoutPreview({
               onChoose={(libraryId) =>
                 setChosen((current) => ({ ...current, [exercise.id]: libraryId }))
               }
+              first={index === 0}
+              last={index === order.length - 1}
+              onMoveUp={() => void move(index, -1)}
+              onMoveDown={() => void move(index, 1)}
             />
           ))}
         </ol>
+      )}
+
+      {reorderError && (
+        <p className="error" role="alert">
+          {reorderError}
+        </p>
       )}
 
       {error && (
@@ -177,11 +216,19 @@ function PreviewExerciseRow({
   number,
   chosenLibraryId,
   onChoose,
+  first,
+  last,
+  onMoveUp,
+  onMoveDown,
 }: {
   exercise: TemplateDayExercise
   number: number
   chosenLibraryId: number
   onChoose: (libraryId: number) => void
+  first: boolean
+  last: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
 }) {
   const state = useExerciseDetail(chosenLibraryId)
   const detail = state.status === 'ready' ? state.data : null
@@ -241,6 +288,26 @@ function PreviewExerciseRow({
               instead of {exercise.name}
             </span>
           )}
+        </span>
+        <span className="workout-preview-move" role="group" aria-label={`Reorder ${exercise.name}`}>
+          <button
+            type="button"
+            className="builder-icon"
+            aria-label={`Move ${exercise.name} up`}
+            disabled={first}
+            onClick={onMoveUp}
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            className="builder-icon"
+            aria-label={`Move ${exercise.name} down`}
+            disabled={last}
+            onClick={onMoveDown}
+          >
+            ↓
+          </button>
         </span>
       </div>
 
